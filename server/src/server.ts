@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { prisma } from "./config/prisma";
 import cookieParser from "cookie-parser";
 import conversationRoutes from "./routes/conversation.routes";
+import messageRoutes from "./routes/message.routes";
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/api", messageRoutes);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
