@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import {
   createConversation,
+  findDirectConversation,
   getUserConversations,
   userExists,
 } from "../services/conversation.service";
@@ -44,6 +45,19 @@ export async function create(
     if (!otherUserExists) {
       res.status(404).json({
         error: "User not found",
+      });
+      return;
+    }
+
+    const existingConversation = await findDirectConversation(
+      userId,
+      normalizedOtherUserId,
+    );
+
+    if (existingConversation) {
+      res.status(200).json({
+        conversation: existingConversation,
+        existing: true,
       });
       return;
     }

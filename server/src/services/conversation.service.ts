@@ -13,6 +13,48 @@ export async function userExists(userId: string): Promise<boolean> {
   return user !== null;
 }
 
+export async function findDirectConversation(
+  userId: string,
+  otherUserId: string,
+) {
+  return prisma.conversation.findFirst({
+    where: {
+      AND: [
+        {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+        {
+          members: {
+            some: {
+              userId: otherUserId,
+            },
+          },
+        },
+      ],
+    },
+    include: {
+      members: {
+        select: {
+          userId: true,
+          joinedAt: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
 export async function createConversation(
   userId: string,
   otherUserId: string,
