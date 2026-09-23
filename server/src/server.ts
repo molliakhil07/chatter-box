@@ -4,7 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { prisma } from "./config/prisma";
 import cookieParser from "cookie-parser";
-
+import conversationRoutes from "./routes/conversation.routes";
 
 dotenv.config();
 
@@ -20,7 +20,7 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 app.use("/api/auth", authRoutes);
-
+app.use("/api/conversations", conversationRoutes);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
