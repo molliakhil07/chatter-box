@@ -121,3 +121,35 @@ export async function getUserConversations(userId: string) {
     },
   });
 }
+
+export async function getConversationById(
+  conversationId: string,
+  userId: string,
+) {
+  return prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      members: {
+        some: {
+          userId,
+        },
+      },
+    },
+    include: {
+      members: {
+        select: {
+          userId: true,
+          joinedAt: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}

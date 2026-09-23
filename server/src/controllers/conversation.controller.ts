@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import {
   createConversation,
   findDirectConversation,
+  getConversationById,
   getUserConversations,
   userExists,
 } from "../services/conversation.service";
@@ -97,6 +98,51 @@ export async function list(
     console.error("Conversation retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve conversations",
+    });
+  }
+}
+export async function getById(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const userId = req.userId;
+    const { conversationId } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    if (
+      typeof conversationId !== "string" ||
+      conversationId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "conversationId is required",
+      });
+      return;
+    }
+
+    const conversation = await getConversationById(
+      conversationId,
+      userId,
+    );
+
+    if (!conversation) {
+      res.status(404).json({
+        error: "Conversation not found",
+      });
+      return;
+    }
+
+    res.status(200).json({ conversation });
+  } catch (error) {
+    console.error("Conversation retrieval failed:", error);
+    res.status(500).json({
+      error: "Unable to retrieve conversation",
     });
   }
 }
