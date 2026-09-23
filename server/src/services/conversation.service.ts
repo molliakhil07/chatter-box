@@ -92,7 +92,7 @@ export async function createConversation(
 }
 
 export async function getUserConversations(userId: string) {
-  return prisma.conversation.findMany({
+  const conversations = await prisma.conversation.findMany({
     where: {
       members: {
         some: {
@@ -100,7 +100,10 @@ export async function getUserConversations(userId: string) {
         },
       },
     },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
+      updatedAt: true,
       members: {
         select: {
           userId: true,
@@ -120,6 +123,8 @@ export async function getUserConversations(userId: string) {
       updatedAt: "desc",
     },
   });
+
+  return conversations;
 }
 
 export async function getConversationById(
@@ -150,6 +155,18 @@ export async function getConversationById(
           },
         },
       },
+    },
+  });
+}
+export async function removeConversationMember(
+  conversationId: string,
+  userId: string,
+  targetUserId: string,
+) {
+  return prisma.conversationMember.deleteMany({
+    where: {
+      conversationId,
+      userId: targetUserId,
     },
   });
 }

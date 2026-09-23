@@ -2,8 +2,9 @@ import type { Request, Response } from "express";
 import {
   createConversation,
   findDirectConversation,
-  getConversationById,
   getUserConversations,
+  getConversationById,
+  removeConversationMember,
   userExists,
 } from "../services/conversation.service";
 
@@ -143,6 +144,81 @@ export async function getById(
     console.error("Conversation retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve conversation",
+    });
+  }
+}
+export async function removeMember(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const userId = req.userId;
+    const { conversationId, userId: targetUserId } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    if (
+      typeof conversationId !== "string" ||
+      conversationId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "conversationId is required",
+      });
+      return;
+    }
+
+    if (
+      typeof targetUserId !== "string" ||
+      targetUserId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "userId is required",
+      });
+      return;
+    }
+
+    if (targetUserId !== userId) {
+      res.status(403).json({
+        error: "You can only remove yourself from a conversation",
+      });
+      return;
+    }
+
+    const conversation = await getConversationById(
+      conversationId,
+      userId,
+    );
+
+    if (!conversation) {
+      res.status(404).json({
+        error: "Conversation not found",
+      });
+      return;
+    }
+
+    const result = await removeConversationMember(
+      conversationId,
+      userId,
+      targetUserId,
+    );
+
+    if (result.count === 0) {
+      res.status(404).json({
+        error: "Conversation membership not found",
+      });
+      return;
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Conversation member removal failed:", error);
+    res.status(500).json({
+      error: "Unable to remove conversation member",
     });
   }
 }
