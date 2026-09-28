@@ -17,9 +17,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  members ConversationMember[]
-  messages      Message[]
-  sessions      Session[]
+  members  ConversationMember[]
+  messages Message[]
+  sessions Session[]
+
+  sentMessageRequests     MessageRequest[] @relation("SentMessageRequests")
+  receivedMessageRequests MessageRequest[] @relation("ReceivedMessageRequests")
 }
 
 model Conversation {
@@ -29,6 +32,7 @@ model Conversation {
 
   members  ConversationMember[]
   messages Message[]
+  sessions Session[]
 }
 
 model ConversationMember {
@@ -74,4 +78,28 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+enum MessageRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model MessageRequest {
+  id          String               @id @default(uuid())
+  senderId    String
+  receiverId  String
+  status      MessageRequestStatus @default(PENDING)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  respondedAt       DateTime?
+  acceptedSeenAt    DateTime?
+
+  sender   User @relation("SentMessageRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessageRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@index([senderId, status])
 }

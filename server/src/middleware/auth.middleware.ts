@@ -1,6 +1,5 @@
-import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
-import { prisma } from "../config/prisma";
+import { validateSession } from "../services/session.service";
 
 export async function requireAuth(
   req: Request,
@@ -17,29 +16,16 @@ export async function requireAuth(
       return;
     }
 
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const userId = await validateSession(token);
 
-    const session = await prisma.session.findUnique({
-      where: {
-        tokenHash,
-      },
-    });
-
-    if (
-      !session ||
-      session.revokedAt !== null ||
-      session.expiresAt <= new Date()
-    ) {
+    if (!userId) {
       res.status(401).json({
         error: "Invalid or expired session",
       });
       return;
     }
 
-    req.userId = session.userId;
+    req.userId = userId;
 
     next();
   } catch (error) {

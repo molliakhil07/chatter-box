@@ -28,12 +28,13 @@ export async function register(
       });
       return;
     }
+
     if (password.length < 8) {
-  res.status(400).json({
-    error: "Password must be at least 8 characters long",
-  });
-  return;
-}
+      res.status(400).json({
+        error: "Password must be at least 8 characters long",
+      });
+      return;
+    }
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -93,22 +94,21 @@ export async function login(
   res: Response,
 ): Promise<void> {
   try {
-    const { identifier, password } = req.body;
+    const { identity, password } = req.body;
 
     if (
-      typeof identifier !== "string" ||
+      typeof identity !== "string" ||
       typeof password !== "string" ||
-      identifier.trim().length === 0 ||
+      identity.trim().length === 0 ||
       password.length === 0
     ) {
       res.status(400).json({
-        error: "identifier and password are required",
+        error: "identity and password are required",
       });
       return;
     }
-    
 
-    const user = await authenticateUser(identifier, password);
+    const user = await authenticateUser(identity, password);
 
     if (!user) {
       res.status(401).json({
