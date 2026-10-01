@@ -12,6 +12,7 @@ export function connectSocket(): Socket {
   }
 
   socket = io(SOCKET_URL, {
+    transports: ["websocket"],
     withCredentials: true,
     autoConnect: true,
   });
