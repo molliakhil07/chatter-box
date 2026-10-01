@@ -6,6 +6,7 @@ import { prisma } from "./config/prisma";
 import cookieParser from "cookie-parser";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
+import messageRequestRoutes from "./routes/message-request.routes";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { validateSession } from "./services/session.service";
@@ -43,6 +44,7 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api", messageRoutes);
+app.use("/api/message-requests", messageRequestRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.json({
