@@ -1,4 +1,9 @@
-import type { Request, Response, NextFunction } from "express";
+import type {
+  Request,
+  Response,
+  NextFunction,
+} from "express";
+import "../types/express";
 import { validateSession } from "../services/session.service";
 
 export async function requireAuth(
