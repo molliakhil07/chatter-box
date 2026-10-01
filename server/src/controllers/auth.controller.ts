@@ -119,10 +119,12 @@ export async function login(
 
     const session = await createSession(user.id);
 
+    const isProduction = process.env.NODE_ENV === "production";
+
     res.cookie("session_token", session.token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 1000 * 60 * 60 * 24 * 30,
     });
 
@@ -163,10 +165,12 @@ export async function logout(
       });
     }
 
+    const isProduction = process.env.NODE_ENV === "production";
+
     res.clearCookie("session_token", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
     });
 
     res.status(200).json({
