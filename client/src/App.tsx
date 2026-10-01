@@ -22,6 +22,10 @@ import {
   connectSocket,
 } from "./services/socket";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ??
+  "http://localhost:5000/api";
+
 type MessageStatus =
   | "sent"
   | "delivered"
@@ -1394,7 +1398,7 @@ function App() {
 
       try {
         const response = await fetch(
-          `http://localhost:5000/api/users?search=${encodeURIComponent(query)}`,
+          `${API_BASE_URL}/users?search=${encodeURIComponent(query)}`,
           {
             credentials: "include",
           },
@@ -1456,7 +1460,7 @@ function App() {
 
       try {
         const response = await fetch(
-          "http://localhost:5000/api/message-requests/incoming",
+          `${API_BASE_URL}/message-requests/incoming`,
           {
             credentials: "include",
           },
@@ -1518,7 +1522,7 @@ function App() {
 
       try {
         const response = await fetch(
-          "http://localhost:5000/api/message-requests/accepted",
+          `${API_BASE_URL}/message-requests/accepted`,
           {
             credentials: "include",
           },
@@ -1609,7 +1613,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/message-requests/${notification.requestId}/accepted-seen`,
+        `${API_BASE_URL}/message-requests/${notification.requestId}/accepted-seen`,
         {
           method: "POST",
           credentials: "include",
@@ -1647,7 +1651,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/message-requests/${requestId}/accept`,
+        `${API_BASE_URL}/message-requests/${requestId}/accept`,
         {
           method: "POST",
           credentials: "include",
@@ -1788,7 +1792,7 @@ function App() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/message-requests",
+        `${API_BASE_URL}/message-requests`,
         {
           method: "POST",
           credentials: "include",
@@ -2571,29 +2575,35 @@ function App() {
       )}
       <style>{`
         :root {
-          --cb-bg: #f3f5f8;
-          --cb-surface: rgba(255, 255, 255, 0.94);
-          --cb-surface-soft: rgba(248, 250, 253, 0.92);
-          --cb-surface-hover: rgba(246, 249, 253, 0.98);
-          --cb-border: rgba(24, 39, 58, 0.09);
-          --cb-border-strong: rgba(24, 39, 58, 0.14);
-          --cb-text: #172238;
-          --cb-text-soft: #68758a;
-          --cb-text-muted: #96a0b0;
-          --cb-accent: #2f72e8;
-          --cb-accent-soft: rgba(47, 114, 232, 0.10);
-          --cb-accent-border: rgba(47, 114, 232, 0.20);
-          --cb-danger: #c84d4d;
-          --cb-shadow:
-            0 20px 55px rgba(36, 50, 70, 0.08),
-            0 3px 12px rgba(36, 50, 70, 0.04);
-          --cb-shadow-soft:
-            0 8px 25px rgba(36, 50, 70, 0.06);
-          --cb-radius-xl: 22px;
-          --cb-radius-lg: 17px;
-          --cb-radius-md: 13px;
-          --cb-radius-sm: 10px;
-        }
+  --cb-bg: #f1f1f1;
+  --cb-surface: #ffffff;
+  --cb-surface-soft: #f7f7f7;
+  --cb-surface-hover: #ebebeb;
+
+  --cb-border: #d6d6d6;
+  --cb-border-strong: #bdbdbd;
+
+  --cb-text: #111111;
+  --cb-text-soft: #5f5f5f;
+  --cb-text-muted: #8a8a8a;
+
+  --cb-accent: #111111;
+  --cb-accent-soft: #e7e7e7;
+  --cb-accent-border: #bdbdbd;
+
+  --cb-danger: #333333;
+
+  --cb-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+
+  --cb-shadow-soft:
+    0 6px 18px rgba(0, 0, 0, 0.06);
+
+  --cb-radius-xl: 16px;
+  --cb-radius-lg: 12px;
+  --cb-radius-md: 9px;
+}
 
         html,
         body,
@@ -2663,18 +2673,31 @@ function App() {
           -webkit-backdrop-filter: blur(18px);
         }
 
-        .brand {
+        .messenger-brand {
+          min-width: 0;
+          display: flex !important;
+          flex-direction: row !important;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .brand-logo {
+          width: 42px;
+          height: 42px;
+          flex: 0 0 42px;
+          display: block;
+          object-fit: contain;
+          border-radius: 6px;
+        }
+
+        .messenger-brand-copy {
           min-width: 0;
           display: flex;
-          align-items: center;
-          gap: 11px;
+          flex-direction: column;
+          justify-content: center;
         }
 
-        .brand-copy {
-          min-width: 0;
-        }
-
-        .brand h1 {
+        .messenger-brand-copy h1 {
           margin: 0;
           color: var(--cb-text);
           font-size: 21px;
@@ -2682,7 +2705,7 @@ function App() {
           letter-spacing: -0.035em;
         }
 
-        .brand span {
+        .messenger-brand-copy span {
           display: block;
           margin-top: 1px;
           color: var(--cb-text-muted);
@@ -4460,8 +4483,16 @@ function App() {
 
 
       <header className="messenger-header">
-        <div className="brand">
-          <div className="brand-copy">
+        <div className="messenger-brand">
+          <img
+            className="brand-logo"
+            src="/icon-192.png"
+            alt="Chatter Box logo"
+            width="42"
+            height="42"
+          />
+
+          <div className="messenger-brand-copy">
             <h1>
               ChatterBox
             </h1>

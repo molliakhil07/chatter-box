@@ -4,7 +4,8 @@ import {
   getConversationMessages,
   updateMessage,
 } from "../services/message.service";
-import { emitToConversation } from "../socket";
+import { prisma } from "../config/prisma";
+import { emitToConversation, emitToUser } from "../socket";
 
 export async function create(
   req: Request,
@@ -32,10 +33,7 @@ export async function create(
       return;
     }
 
-    if (
-      typeof content !== "string" ||
-      content.trim().length === 0
-    ) {
+    if (typeof content !== "string" || content.trim().length === 0) {
       res.status(400).json({
         error: "Message content is required",
       });
@@ -55,29 +53,55 @@ export async function create(
       return;
     }
 
+    const conversation = await prisma.conversation.findUnique({
+      where: {
+        id: conversationId,
+      },
+      select: {
+        members: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    const realtimePayload = {
+      conversationId,
+      message,
+    };
+
+    /*
+     * Keep the conversation-room event for clients already inside
+     * the chat, and also send the event to each other member's
+     * private user room so unread indicators work from another chat.
+     */
     emitToConversation(
       conversationId,
       "message_new",
-      {
-        conversationId,
-        message,
-      },
+      realtimePayload,
     );
+
+    for (const member of conversation?.members ?? []) {
+      if (member.userId === userId) {
+        continue;
+      }
+
+      emitToUser(
+        member.userId,
+        "message_new",
+        realtimePayload,
+      );
+    }
 
     res.status(201).json({ message });
   } catch (error) {
-    console.error(
-      "Message creation failed:",
-      error,
-    );
-
+    console.error("Message creation failed:", error);
     res.status(500).json({
       error: "Unable to create message",
     });
   }
 }
-
-/* ---------------- MESSAGE HISTORY ---------------- */
 
 export async function list(
   req: Request,
@@ -86,10 +110,7 @@ export async function list(
   try {
     const userId = req.userId;
     const { conversationId } = req.params;
-
-    const cursorParam = req.query.cursor;
-    const beforeParam = req.query.before;
-    const limitParam = req.query.limit;
+    const { cursor } = req.query;
 
     if (!userId) {
       res.status(401).json({
@@ -108,16 +129,9 @@ export async function list(
       return;
     }
 
-    const cursor =
-      typeof beforeParam === "string"
-        ? beforeParam
-        : typeof cursorParam === "string"
-          ? cursorParam
-          : undefined;
-
     if (
-      cursorParam !== undefined &&
-      typeof cursorParam !== "string"
+      cursor !== undefined &&
+      typeof cursor !== "string"
     ) {
       res.status(400).json({
         error: "cursor must be a string",
@@ -125,75 +139,46 @@ export async function list(
       return;
     }
 
-    if (
-      beforeParam !== undefined &&
-      typeof beforeParam !== "string"
-    ) {
-      res.status(400).json({
-        error: "before must be a string",
-      });
-      return;
-    }
+    const messageResult = await getConversationMessages(
+      conversationId,
+      userId,
+      cursor,
+    );
 
-    let limit = 30;
-
-    if (limitParam !== undefined) {
-      if (typeof limitParam !== "string") {
-        res.status(400).json({
-          error: "limit must be a number",
-        });
-        return;
-      }
-
-      const parsedLimit = Number(limitParam);
-
-      if (
-        !Number.isInteger(parsedLimit) ||
-        parsedLimit < 1 ||
-        parsedLimit > 50
-      ) {
-        res.status(400).json({
-          error:
-            "limit must be an integer between 1 and 50",
-        });
-        return;
-      }
-
-      limit = parsedLimit;
-    }
-
-    const result =
-      await getConversationMessages(
-        conversationId,
-        userId,
-        cursor,
-        limit,
-      );
-
-    if (!result) {
+    if (!messageResult) {
       res.status(404).json({
         error: "Conversation not found",
       });
       return;
     }
 
+    /*
+     * message.service currently returns the paginated result in the
+     * project shape `{ items, nextCursor }`. Keep this controller
+     * compatible with the older array return shape as well so the
+     * response contract sent to the frontend is always the same.
+     */
+    const messages = Array.isArray(messageResult)
+      ? messageResult
+      : messageResult.items;
+
+    const nextCursor = Array.isArray(messageResult)
+      ? messages.length === 50
+        ? messages[messages.length - 1]?.id ?? null
+        : null
+      : messageResult.nextCursor ?? null;
+
     res.status(200).json({
-      items: result.items,
-      nextCursor: result.nextCursor,
+      items: messages,
+      nextCursor,
     });
   } catch (error) {
-    console.error(
-      "Message retrieval failed:",
-      error,
-    );
-
+    console.error("Message retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve messages",
     });
   }
 }
-
-/* ---------------- MESSAGE UPDATE ---------------- */
 
 export async function update(
   req: Request,
@@ -221,10 +206,7 @@ export async function update(
       return;
     }
 
-    if (
-      action !== "edit" &&
-      action !== "delete"
-    ) {
+    if (action !== "edit" && action !== "delete") {
       res.status(400).json({
         error: "action must be edit or delete",
       });
@@ -233,14 +215,10 @@ export async function update(
 
     if (
       action === "edit" &&
-      (
-        typeof content !== "string" ||
-        content.trim().length === 0
-      )
+      (typeof content !== "string" || content.trim().length === 0)
     ) {
       res.status(400).json({
-        error:
-          "Message content is required for editing",
+        error: "Message content is required for editing",
       });
       return;
     }
@@ -261,26 +239,21 @@ export async function update(
 
     if (result.status === "forbidden") {
       res.status(403).json({
-        error:
-          "You can only modify your own messages",
+        error: "You can only modify your own messages",
       });
       return;
     }
 
-    if (
-      result.status === "invalid_content"
-    ) {
+    if (result.status === "invalid_content") {
       res.status(400).json({
-        error:
-          "Message content is required for editing",
+        error: "Message content is required for editing",
       });
       return;
     }
 
     if (result.status === "deleted") {
       res.status(409).json({
-        error:
-          "Message has already been deleted",
+        error: "Message has already been deleted",
       });
       return;
     }
@@ -289,11 +262,7 @@ export async function update(
       message: result.message,
     });
   } catch (error) {
-    console.error(
-      "Message update failed:",
-      error,
-    );
-
+    console.error("Message update failed:", error);
     res.status(500).json({
       error: "Unable to update message",
     });

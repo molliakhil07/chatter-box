@@ -20,6 +20,16 @@ export function emitToConversation(
     .emit(event, payload);
 }
 
+export function emitToUser(
+  userId: string,
+  event: string,
+  payload: unknown,
+): void {
+  io
+    ?.to(`user:${userId}`)
+    .emit(event, payload);
+}
+
 export function emitMessageStatus(
   conversationId: string,
   payload: unknown,
@@ -39,14 +49,4 @@ export function emitMessageRead(
     conversationId,
     payload,
   );
-}
-
-export function emitToUser(
-  userId: string,
-  event: string,
-  payload: unknown,
-): void {
-  io
-    ?.to(`user:${userId}`)
-    .emit(event, payload);
 }

@@ -6,25 +6,33 @@ import { prisma } from "./config/prisma";
 import cookieParser from "cookie-parser";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
-import userRoutes from "./routes/user.routes";
-import messageRequestRoutes from "./routes/message-request.routes";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { validateSession } from "./services/session.service";
-import {
-  setSocketIO,
-  emitToConversation,
-  emitMessageRead,
-} from "./socket";
+import { setSocketIO, emitToUser } from "./socket";
 
 dotenv.config();
 
 const app = express();
-const PORT = 5000;
+
+const PORT = Number(process.env.PORT ?? 5000);
+const HOST = process.env.HOST ?? "0.0.0.0";
+
+const configuredCorsOrigins = (
+  process.env.CORS_ORIGIN ?? "http://localhost:1204"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOrigin =
+  configuredCorsOrigins.length === 1
+    ? configuredCorsOrigins[0]
+    : configuredCorsOrigins;
 
 app.use(
   cors({
-    origin: "http://localhost:1204",
+    origin: corsOrigin,
     credentials: true,
   }),
 );
@@ -34,8 +42,6 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/conversations", conversationRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/message-requests", messageRequestRoutes);
 app.use("/api", messageRoutes);
 
 app.get("/api/health", (_req, res) => {
@@ -67,53 +73,12 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:1204",
+    origin: corsOrigin,
     credentials: true,
   },
 });
 
-
 setSocketIO(io);
-
-/* ---------------- PRESENCE STATE ---------------- */
-
-const activeConnections = new Map<string, number>();
-const lastSeenAt = new Map<string, string>();
-
-function incrementPresence(userId: string): void {
-  const currentConnections = activeConnections.get(userId) ?? 0;
-
-  activeConnections.set(userId, currentConnections + 1);
-
-  if (currentConnections === 0) {
-    io.emit("presence_updated", {
-      userId,
-      online: true,
-      lastSeenAt: lastSeenAt.get(userId) ?? null,
-    });
-  }
-}
-
-function decrementPresence(userId: string): void {
-  const currentConnections = activeConnections.get(userId) ?? 0;
-
-  if (currentConnections <= 1) {
-    activeConnections.delete(userId);
-
-    const timestamp = new Date().toISOString();
-    lastSeenAt.set(userId, timestamp);
-
-    io.emit("presence_updated", {
-      userId,
-      online: false,
-      lastSeenAt: timestamp,
-    });
-
-    return;
-  }
-
-  activeConnections.set(userId, currentConnections - 1);
-}
 
 /* ---------------- SOCKET AUTHENTICATION ---------------- */
 
@@ -135,7 +100,6 @@ io.use(async (socket, next) => {
     }
 
     const token = sessionCookie.slice("session_token=".length);
-
     const userId = await validateSession(token);
 
     if (!userId) {
@@ -143,11 +107,9 @@ io.use(async (socket, next) => {
     }
 
     socket.data.userId = userId;
-
     next();
   } catch (error) {
     console.error("Socket authentication failed:", error);
-
     next(new Error("Authentication failed"));
   }
 });
@@ -157,11 +119,10 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   const userId = socket.data.userId;
 
-  incrementPresence(userId);
-
   /*
-   * Private per-user room for account-level realtime events.
-   * The room is authenticated from the session-bound socket userId.
+   * Every authenticated socket joins its private user room.
+   * This lets message/status events reach the user even when
+   * they are currently viewing another conversation.
    */
   socket.join(`user:${userId}`);
 
@@ -202,6 +163,31 @@ io.on("connection", (socket) => {
 
       socket.join(`conversation:${conversationId}`);
 
+      /*
+       * Opening the conversation means incoming messages are now
+       * delivered to this user. Notify each original sender directly.
+       * Status is realtime-only in the current v1 schema.
+       */
+      const incomingMessages = await prisma.message.findMany({
+        where: {
+          conversationId,
+          senderId: {
+            not: userId,
+          },
+        },
+        select: {
+          id: true,
+          senderId: true,
+        },
+      });
+
+      for (const message of incomingMessages) {
+        emitToUser(message.senderId, "message_status", {
+          messageId: message.id,
+          status: "delivered",
+        });
+      }
+
       callback?.({
         ok: true,
         conversationId,
@@ -234,122 +220,6 @@ io.on("connection", (socket) => {
       ok: true,
       conversationId,
     });
-  });
-
-  socket.on("typing_start", async (conversationId, callback) => {
-    try {
-      if (
-        typeof conversationId !== "string" ||
-        conversationId.trim().length === 0
-      ) {
-        callback?.({
-          ok: false,
-          error: "conversationId is required",
-        });
-        return;
-      }
-
-      const conversation = await prisma.conversation.findFirst({
-        where: {
-          id: conversationId,
-          members: {
-            some: {
-              userId,
-            },
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (!conversation) {
-        callback?.({
-          ok: false,
-          error: "Conversation not found",
-        });
-        return;
-      }
-
-      emitToConversation(
-        conversationId,
-        "typing_updated",
-        {
-          conversationId,
-          userId,
-          isTyping: true,
-        },
-      );
-
-      callback?.({
-        ok: true,
-      });
-    } catch (error) {
-      console.error("Typing start failed:", error);
-
-      callback?.({
-        ok: false,
-        error: "Unable to update typing state",
-      });
-    }
-  });
-
-  socket.on("typing_stop", async (conversationId, callback) => {
-    try {
-      if (
-        typeof conversationId !== "string" ||
-        conversationId.trim().length === 0
-      ) {
-        callback?.({
-          ok: false,
-          error: "conversationId is required",
-        });
-        return;
-      }
-
-      const conversation = await prisma.conversation.findFirst({
-        where: {
-          id: conversationId,
-          members: {
-            some: {
-              userId,
-            },
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (!conversation) {
-        callback?.({
-          ok: false,
-          error: "Conversation not found",
-        });
-        return;
-      }
-
-      emitToConversation(
-        conversationId,
-        "typing_updated",
-        {
-          conversationId,
-          userId,
-          isTyping: false,
-        },
-      );
-
-      callback?.({
-        ok: true,
-      });
-    } catch (error) {
-      console.error("Typing stop failed:", error);
-
-      callback?.({
-        ok: false,
-        error: "Unable to update typing state",
-      });
-    }
   });
 
   socket.on("message_read", async (conversationId, messageId, callback) => {
@@ -405,6 +275,7 @@ io.on("connection", (socket) => {
         },
         select: {
           id: true,
+          senderId: true,
         },
       });
 
@@ -416,10 +287,13 @@ io.on("connection", (socket) => {
         return;
       }
 
-      emitMessageRead(conversationId, {
-  messageId,
-  status: "read",
-});
+      /* Only the original sender should receive the read status. */
+      if (message.senderId !== userId) {
+        emitToUser(message.senderId, "message_status", {
+          messageId: message.id,
+          status: "read",
+        });
+      }
 
       callback?.({
         ok: true,
@@ -436,10 +310,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    decrementPresence(userId);
+    // No presence/typing state is maintained by the server.
   });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`Chatter Box server running on http://localhost:${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(
+    `Chatter Box server running on http://${HOST}:${PORT}`,
+  );
 });
