@@ -105,6 +105,15 @@ interface MessagesResponse {
   nextCursor: string | null;
 }
 
+interface MessagesApiResponse {
+  items?: Message[];
+  nextCursor?: string | null;
+  messages?: {
+    items?: Message[];
+    nextCursor?: string | null;
+  };
+}
+
 export async function getConversationMessages(
   conversationId: string,
   cursor?: string,
@@ -125,7 +134,32 @@ export async function getConversationMessages(
     throw new Error("Unable to load messages");
   }
 
-  return response.json();
+  const data =
+    (await response.json()) as MessagesApiResponse;
+
+  /*
+   * The production API currently returns the message
+   * pagination payload inside a `messages` object:
+   *
+   * {
+   *   messages: {
+   *     items: [...],
+   *     nextCursor: ...
+   *   }
+   * }
+   *
+   * Keep the client normalized to the shape expected
+   * by App.tsx. Also accept the direct shape so the
+   * client remains compatible with the local API.
+   */
+  const messagePayload =
+    data.messages ?? data;
+
+  return {
+    items: messagePayload.items ?? [],
+    nextCursor:
+      messagePayload.nextCursor ?? null,
+  };
 }
 
 export interface CreateMessageResponse {
