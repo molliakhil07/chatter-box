@@ -97,6 +97,15 @@ export interface Message {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  replyToMessageId: string | null;
+  replyToMessage: RepliedMessage | null;
+  sender: MessageSender;
+}
+
+export interface RepliedMessage {
+  id: string;
+  content: string;
+  deletedAt: string | null;
   sender: MessageSender;
 }
 
@@ -108,10 +117,12 @@ interface MessagesResponse {
 interface MessagesApiResponse {
   items?: Message[];
   nextCursor?: string | null;
-  messages?: {
-    items?: Message[];
-    nextCursor?: string | null;
-  };
+  messages?:
+    | Message[]
+    | {
+        items?: Message[];
+        nextCursor?: string | null;
+      };
 }
 
 export async function getConversationMessages(
@@ -155,6 +166,13 @@ export async function getConversationMessages(
   const messagePayload =
     data.messages ?? data;
 
+  if (Array.isArray(messagePayload)) {
+    return {
+      items: messagePayload,
+      nextCursor: null,
+    };
+  }
+
   return {
     items: messagePayload.items ?? [],
     nextCursor:
@@ -169,6 +187,7 @@ export interface CreateMessageResponse {
 export async function sendConversationMessage(
   conversationId: string,
   content: string,
+  replyToMessageId?: string,
 ): Promise<CreateMessageResponse> {
   const response = await fetch(
     `${API_BASE_URL}/conversations/${conversationId}/messages`,
@@ -180,12 +199,48 @@ export async function sendConversationMessage(
       },
       body: JSON.stringify({
         content,
+        ...(replyToMessageId
+          ? { replyToMessageId }
+          : {}),
       }),
     },
   );
 
   if (!response.ok) {
     throw new Error("Unable to send message");
+  }
+
+  return response.json();
+}
+
+export type UpdateMessageAction = "edit" | "delete";
+
+export interface UpdateMessageResponse {
+  message: Message;
+}
+
+export async function updateMessage(
+  messageId: string,
+  action: UpdateMessageAction,
+  content?: string,
+): Promise<UpdateMessageResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/messages/${messageId}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action,
+        ...(action === "edit" ? { content } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Unable to update message");
   }
 
   return response.json();

@@ -1,37 +1,26 @@
 import { prisma } from "../config/prisma";
 
-export async function createMessage(
-  conversationId: string,
-  senderId: string,
-  content: string,
-) {
-  const membership =
-    await prisma.conversationMember.findUnique({
-      where: {
-        conversationId_userId: {
-          conversationId,
-          userId: senderId,
-        },
-      },
-    });
-
-  if (!membership) {
-    return null;
-  }
-
-  return prisma.message.create({
-    data: {
-      conversationId,
-      senderId,
-      content,
-    },
+const messageSelect = {
+  id: true,
+  conversationId: true,
+  senderId: true,
+  content: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+  replyToMessageId: true,
+  sender: {
     select: {
       id: true,
-      conversationId: true,
-      senderId: true,
+      username: true,
+      displayName: true,
+      avatarUrl: true,
+    },
+  },
+  replyToMessage: {
+    select: {
+      id: true,
       content: true,
-      createdAt: true,
-      updatedAt: true,
       deletedAt: true,
       sender: {
         select: {
@@ -42,26 +31,80 @@ export async function createMessage(
         },
       },
     },
-  });
-}
+  },
+} as const;
 
-/* ---------------- MESSAGE HISTORY ---------------- */
+export async function createMessage(
+  conversationId: string,
+  senderId: string,
+  content: string,
+  replyToMessageId?: string,
+) {
+  const membership = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId,
+        userId: senderId,
+      },
+    },
+  });
+
+  if (!membership) {
+    return {
+      status: "conversation_not_found" as const,
+    };
+  }
+
+  if (replyToMessageId) {
+    const replyTarget = await prisma.message.findFirst({
+      where: {
+        id: replyToMessageId,
+        conversationId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!replyTarget) {
+      return {
+        status: "invalid_reply" as const,
+      };
+    }
+  }
+
+  const message = await prisma.message.create({
+    data: {
+      conversationId,
+      senderId,
+      content,
+      ...(replyToMessageId
+        ? { replyToMessageId }
+        : {}),
+    },
+    select: messageSelect,
+  });
+
+  return {
+    status: "created" as const,
+    message,
+  };
+}
 
 export async function getConversationMessages(
   conversationId: string,
   userId: string,
   cursor?: string,
-  limit = 30,
+  limit = 50,
 ) {
-  const membership =
-    await prisma.conversationMember.findUnique({
-      where: {
-        conversationId_userId: {
-          conversationId,
-          userId,
-        },
+  const membership = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId,
+        userId,
       },
-    });
+    },
+  });
 
   if (!membership) {
     return null;
@@ -71,11 +114,9 @@ export async function getConversationMessages(
     where: {
       conversationId,
     },
-
     orderBy: {
       createdAt: "desc",
     },
-
     ...(cursor
       ? {
           cursor: {
@@ -84,47 +125,12 @@ export async function getConversationMessages(
           skip: 1,
         }
       : {}),
-
-    // Fetch one extra message so we know
-    // whether another page exists.
-    take: limit + 1,
-
-    select: {
-      id: true,
-      conversationId: true,
-      senderId: true,
-      content: true,
-      createdAt: true,
-      updatedAt: true,
-      deletedAt: true,
-      sender: {
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          avatarUrl: true,
-        },
-      },
-    },
+    take: limit,
+    select: messageSelect,
   });
 
-  const hasMore = messages.length > limit;
-
-  const items = hasMore
-    ? messages.slice(0, limit)
-    : messages;
-
-  const nextCursor = hasMore
-    ? items[items.length - 1]?.id ?? null
-    : null;
-
-  return {
-    items,
-    nextCursor,
-  };
+  return messages;
 }
-
-/* ---------------- MESSAGE UPDATE ---------------- */
 
 export async function updateMessage(
   messageId: string,
@@ -163,32 +169,15 @@ export async function updateMessage(
       };
     }
 
-    const updatedMessage =
-      await prisma.message.update({
-        where: {
-          id: messageId,
-        },
-        data: {
-          content: content.trim(),
-        },
-        select: {
-          id: true,
-          conversationId: true,
-          senderId: true,
-          content: true,
-          createdAt: true,
-          updatedAt: true,
-          deletedAt: true,
-          sender: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatarUrl: true,
-            },
-          },
-        },
-      });
+    const updatedMessage = await prisma.message.update({
+      where: {
+        id: messageId,
+      },
+      data: {
+        content: content.trim(),
+      },
+      select: messageSelect,
+    });
 
     return {
       status: "updated" as const,
@@ -202,32 +191,15 @@ export async function updateMessage(
     };
   }
 
-  const deletedMessage =
-    await prisma.message.update({
-      where: {
-        id: messageId,
-      },
-      data: {
-        deletedAt: new Date(),
-      },
-      select: {
-        id: true,
-        conversationId: true,
-        senderId: true,
-        content: true,
-        createdAt: true,
-        updatedAt: true,
-        deletedAt: true,
-        sender: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-      },
-    });
+  const deletedMessage = await prisma.message.update({
+    where: {
+      id: messageId,
+    },
+    data: {
+      deletedAt: new Date(),
+    },
+    select: messageSelect,
+  });
 
   return {
     status: "deleted" as const,

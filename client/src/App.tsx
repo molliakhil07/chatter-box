@@ -9,6 +9,7 @@ import {
   getConversations,
   getCurrentUser,
   sendConversationMessage,
+  updateMessage,
   type Conversation,
   type CurrentUser,
   type Message,
@@ -305,6 +306,41 @@ function App() {
   const [unreadCounts, setUnreadCounts] =
     useState<Record<string, number>>({});
 
+  /*
+   * 7B-4A message actions UI state.
+   *
+   * Only one message menu can be open at a time.
+   * Action behavior is intentionally added in 7B-4B/4C/4D.
+   */
+  const [openMessageActionId, setOpenMessageActionId] =
+    useState<string | null>(null);
+
+  /*
+   * 7B-4B message editing state.
+   */
+  const [editingMessageId, setEditingMessageId] =
+    useState<string | null>(null);
+  const [editingMessageContent, setEditingMessageContent] =
+    useState("");
+  const [updatingMessage, setUpdatingMessage] =
+    useState(false);
+  const [messageUpdateError, setMessageUpdateError] =
+    useState("");
+
+  /*
+   * 7B-4C message deletion state.
+   */
+  const [deletingMessageId, setDeletingMessageId] =
+    useState<string | null>(null);
+  const [deletingMessage, setDeletingMessage] =
+    useState(false);
+
+  /*
+   * 7B-4D reply state.
+   */
+  const [replyingToMessage, setReplyingToMessage] =
+    useState<Message | null>(null);
+
   const messageListRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -588,6 +624,32 @@ function App() {
   }, [user, selectedConversationId]);
 
   /*
+   * 7B-4A: close an open message-actions menu when
+   * the user clicks anywhere outside the menu.
+   */
+  useEffect(() => {
+    if (!openMessageActionId) {
+      return;
+    }
+
+    function handleDocumentPointerDown() {
+      setOpenMessageActionId(null);
+    }
+
+    document.addEventListener(
+      "pointerdown",
+      handleDocumentPointerDown,
+    );
+
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        handleDocumentPointerDown,
+      );
+    };
+  }, [openMessageActionId]);
+
+  /*
    * Join selected conversation room,
    * receive realtime messages,
    * receive message status updates.
@@ -664,6 +726,40 @@ function App() {
       });
     }
 
+    function handleMessageUpdated(payload: {
+      conversationId: string;
+      message: Message;
+    }) {
+      if (
+        !payload ||
+        payload.conversationId !== conversationId ||
+        !payload.message
+      ) {
+        return;
+      }
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.id === payload.message.id
+            ? payload.message
+            : message,
+        ),
+      );
+
+      if (payload.message.deletedAt) {
+        setMessageStatuses((currentStatuses) => {
+          if (!(payload.message.id in currentStatuses)) {
+            return currentStatuses;
+          }
+
+          const updatedStatuses = { ...currentStatuses };
+          delete updatedStatuses[payload.message.id];
+          return updatedStatuses;
+        });
+
+      }
+    }
+
     function handleMessageStatus(
       payload: MessageStatusPayload,
     ) {
@@ -726,6 +822,11 @@ function App() {
       handleMessageStatus,
     );
 
+    socket.on(
+      "message_updated",
+      handleMessageUpdated,
+    );
+
     socket.emit(
       "conversation:join",
       conversationId,
@@ -757,6 +858,11 @@ function App() {
       socket.off(
         "message_status",
         handleMessageStatus,
+      );
+
+      socket.off(
+        "message_updated",
+        handleMessageUpdated,
       );
 
       socket.emit(
@@ -808,6 +914,10 @@ function App() {
     setNextCursor(null);
     setMessageStatuses({});
     readMessageIdsRef.current.clear();
+    setOpenMessageActionId(null);
+    setEditingMessageId(null);
+    setEditingMessageContent("");
+    setMessageUpdateError("");
 
     async function loadMessages() {
       setMessagesLoading(true);
@@ -1064,6 +1174,171 @@ function App() {
     }
   }
 
+  function startEditingMessage(message: Message) {
+    if (message.deletedAt || message.senderId !== user?.id) {
+      return;
+    }
+
+    setOpenMessageActionId(null);
+    setMessageUpdateError("");
+    setEditingMessageId(message.id);
+    setEditingMessageContent(message.content);
+
+    requestAnimationFrame(() => {
+      const composer = document.querySelector<HTMLTextAreaElement>(
+        ".message-composer textarea",
+      );
+
+      composer?.focus();
+      composer?.setSelectionRange(
+        composer.value.length,
+        composer.value.length,
+      );
+    });
+  }
+
+  function cancelEditingMessage() {
+    setEditingMessageId(null);
+    setEditingMessageContent("");
+    setMessageUpdateError("");
+  }
+
+  function startReplyingToMessage(message: Message) {
+    setOpenMessageActionId(null);
+    setMessageUpdateError("");
+
+    if (editingMessageId) {
+      cancelEditingMessage();
+    }
+
+    setReplyingToMessage(message);
+
+    requestAnimationFrame(() => {
+      const composer = document.querySelector<HTMLTextAreaElement>(
+        ".message-composer textarea",
+      );
+
+      composer?.focus();
+    });
+  }
+
+  function cancelReplyingToMessage() {
+    if (sendingMessage) {
+      return;
+    }
+
+    setReplyingToMessage(null);
+  }
+
+  function scrollToMessage(messageId: string) {
+    const messageElement = document.querySelector<HTMLElement>(
+      `[data-message-id="${messageId}"]`,
+    );
+
+    if (!messageElement) {
+      return;
+    }
+
+    messageElement.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
+
+  async function handleDeleteMessage() {
+    const messageId = deletingMessageId;
+
+    if (!messageId || deletingMessage) {
+      return;
+    }
+
+    setDeletingMessage(true);
+    setMessageUpdateError("");
+
+    try {
+      const response = await updateMessage(
+        messageId,
+        "delete",
+      );
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.id === response.message.id
+            ? response.message
+            : message,
+        ),
+      );
+
+      setMessageStatuses((currentStatuses) => {
+        if (!(messageId in currentStatuses)) {
+          return currentStatuses;
+        }
+
+        const updatedStatuses = { ...currentStatuses };
+        delete updatedStatuses[messageId];
+        return updatedStatuses;
+      });
+
+      setDeletingMessageId(null);
+      setOpenMessageActionId(null);
+
+      if (editingMessageId === messageId) {
+        cancelEditingMessage();
+      }
+    } catch {
+      setMessageUpdateError(
+        "Unable to delete message. Please try again.",
+      );
+    } finally {
+      setDeletingMessage(false);
+    }
+  }
+
+  function cancelDeleteMessage() {
+    if (deletingMessage) {
+      return;
+    }
+
+    setDeletingMessageId(null);
+    setMessageUpdateError("");
+  }
+
+  async function handleSaveEditedMessage() {
+    const messageId = editingMessageId;
+    const content = editingMessageContent.trim();
+
+    if (!messageId || !content || updatingMessage) {
+      return;
+    }
+
+    setUpdatingMessage(true);
+    setMessageUpdateError("");
+
+    try {
+      const response = await updateMessage(
+        messageId,
+        "edit",
+        content,
+      );
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.id === response.message.id
+            ? response.message
+            : message,
+        ),
+      );
+
+      setEditingMessageId(null);
+      setEditingMessageContent("");
+      setOpenMessageActionId(null);
+    } catch {
+      setMessageUpdateError("Unable to edit message. Please try again.");
+    } finally {
+      setUpdatingMessage(false);
+    }
+  }
+
   /*
    * Send a message through REST.
    */
@@ -1090,6 +1365,7 @@ function App() {
         await sendConversationMessage(
           conversationId,
           content,
+          replyingToMessage?.id,
         );
 
       setMessages(
@@ -1125,6 +1401,7 @@ function App() {
       );
 
       setMessageInput("");
+      setReplyingToMessage(null);
 
       requestAnimationFrame(() => {
         const messageList =
@@ -1156,7 +1433,15 @@ function App() {
       setMessages([]);
       setNextCursor(null);
       setMessageStatuses({});
+      setReplyingToMessage(null);
+      setOpenMessageActionId(null);
+      setDeletingMessageId(null);
+      cancelEditingMessage();
       setUnreadCounts({});
+      setOpenMessageActionId(null);
+      setEditingMessageId(null);
+      setEditingMessageContent("");
+      setMessageUpdateError("");
       setConversationSearch("");
       setAuthMode("login");
       setAuthPassword("");
@@ -3359,6 +3644,370 @@ function App() {
           justify-content: flex-start;
         }
 
+        /* =========================================================
+           7B-4A MESSAGE ACTIONS
+           ========================================================= */
+
+        .message-update-error {
+          margin: 0 14px 6px;
+          padding: 8px 11px;
+          border: 1px solid #bcbcbc;
+          border-radius: 9px;
+          background: #e5e5e5;
+          color: #444444;
+          font-size: 12px;
+          line-height: 1.35;
+        }
+
+        .message-composer-editing {
+          flex-wrap: wrap;
+        }
+
+        .message-replying-bar {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 10px;
+          border: 1px solid var(--cb-border);
+          border-left: 3px solid var(--cb-accent);
+          border-radius: 10px;
+          background: #f7f8fa;
+        }
+
+        .message-replying-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          overflow: hidden;
+        }
+
+        .message-replying-copy strong {
+          color: var(--cb-text);
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        .message-replying-copy span {
+          overflow: hidden;
+          color: var(--cb-text-muted);
+          font-size: 11px;
+          line-height: 1.35;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .message-reply-cancel-icon {
+          width: 28px;
+          height: 28px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 1px solid var(--cb-border);
+          border-radius: 8px;
+          background: #ffffff;
+          color: var(--cb-text-soft);
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .message-editing-bar {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 10px;
+          border: 1px solid var(--cb-border);
+          border-radius: 10px;
+          background: #f7f8fa;
+        }
+
+        .message-editing-bar div {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .message-editing-bar strong {
+          color: var(--cb-text);
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        .message-editing-bar span {
+          color: var(--cb-text-muted);
+          font-size: 11px;
+        }
+
+        .message-edit-cancel-icon {
+          width: 28px;
+          height: 28px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 1px solid var(--cb-border);
+          border-radius: 8px;
+          background: #ffffff;
+          color: var(--cb-text-soft);
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .message-edit-cancel-button {
+          background: #ffffff !important;
+          border-color: var(--cb-border-strong) !important;
+          color: var(--cb-text) !important;
+          box-shadow: none !important;
+        }
+
+        .message-edit-cancel-button:hover:not(:disabled) {
+          background: #f3f5f8 !important;
+        }
+
+        .message-composer-editing textarea {
+          border-color: var(--cb-accent-border);
+          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.055);
+        }
+
+        .message-action-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          max-width: 100%;
+        }
+
+        .message-action-wrap-own {
+          flex-direction: row-reverse;
+        }
+
+        .message-action-wrap-other {
+          flex-direction: row;
+        }
+
+        .message-actions {
+          position: relative;
+          flex: 0 0 auto;
+          align-self: center;
+        }
+
+        .message-actions-trigger {
+          width: 30px;
+          height: 30px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border: 1px solid transparent;
+          border-radius: 9px;
+          background: transparent;
+          color: var(--cb-text-muted);
+          cursor: pointer;
+          opacity: 0;
+          transition:
+            opacity 140ms ease,
+            background 140ms ease,
+            color 140ms ease;
+        }
+
+        .message-row:hover .message-actions-trigger,
+        .message-actions-trigger:focus-visible,
+        .message-actions-open .message-actions-trigger {
+          opacity: 1;
+        }
+
+        .message-actions-trigger:hover {
+          background: #f1f3f6;
+          color: var(--cb-text);
+        }
+
+        .message-actions-trigger:focus-visible {
+          outline: 2px solid rgba(47, 114, 232, 0.28);
+          outline-offset: 1px;
+        }
+
+        .message-actions-trigger span {
+          display: block;
+          transform: translateY(-2px);
+          font-size: 13px;
+          font-weight: 800;
+          letter-spacing: 2px;
+          line-height: 1;
+        }
+
+        .message-actions-menu {
+          position: absolute;
+          z-index: 12;
+          top: calc(100% + 6px);
+          min-width: 128px;
+          padding: 5px;
+          border: 1px solid var(--cb-border-strong);
+          border-radius: 11px;
+          background: #ffffff;
+          box-shadow: 0 12px 28px rgba(24, 39, 58, 0.14);
+        }
+
+        .message-action-wrap-other .message-actions-menu {
+          left: 0;
+        }
+
+        .message-action-wrap-own .message-actions-menu {
+          right: 0;
+        }
+
+        .message-actions-menu button {
+          width: 100%;
+          min-height: 36px;
+          display: flex;
+          align-items: center;
+          padding: 0 10px;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: var(--cb-text);
+          font-size: 12px;
+          font-weight: 650;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .message-actions-menu button:hover,
+        .message-actions-menu button:focus-visible {
+          background: #f2f4f7;
+          outline: none;
+        }
+
+        .message-delete-confirm {
+          position: absolute;
+          z-index: 20;
+          top: calc(100% + 7px);
+          min-width: 190px;
+          max-width: 230px;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          border: 1px solid var(--cb-border-strong);
+          border-radius: 12px;
+          background: #ffffff;
+          box-shadow: 0 14px 30px rgba(24, 39, 58, 0.16);
+        }
+
+        .message-action-wrap-own .message-delete-confirm {
+          right: 0;
+        }
+
+        .message-action-wrap-other .message-delete-confirm {
+          left: 0;
+        }
+
+        .message-delete-confirm strong {
+          color: var(--cb-text);
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        .message-delete-confirm > span {
+          color: var(--cb-text-muted);
+          font-size: 11px;
+          line-height: 1.35;
+        }
+
+        .message-delete-confirm-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 7px;
+          margin-top: 7px;
+        }
+
+        .message-delete-confirm-actions button {
+          min-height: 32px;
+          padding: 0 10px;
+          border: 1px solid var(--cb-border-strong);
+          border-radius: 8px;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .message-delete-cancel {
+          background: #ffffff;
+          color: var(--cb-text);
+        }
+
+        .message-delete-cancel:hover:not(:disabled) {
+          background: #f3f5f8;
+        }
+
+        .message-delete-confirm-button {
+          border-color: #111111 !important;
+          background: #111111 !important;
+          color: #ffffff !important;
+        }
+
+        .message-delete-confirm-button:hover:not(:disabled) {
+          background: #303030 !important;
+        }
+
+        .message-delete-confirm-actions button:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+        }
+
+        .message-reply-preview {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          margin: 0 0 7px;
+          padding: 6px 8px;
+          border: 0;
+          border-left: 3px solid currentColor;
+          border-radius: 5px;
+          text-align: left;
+          cursor: pointer;
+          overflow: hidden;
+        }
+
+        .message-reply-preview-own {
+          background: rgba(255, 255, 255, 0.12);
+          color: rgba(255, 255, 255, 0.86);
+        }
+
+        .message-reply-preview-other {
+          background: rgba(0, 0, 0, 0.045);
+          color: var(--cb-text-muted);
+        }
+
+        .message-reply-preview:hover {
+          opacity: 0.86;
+        }
+
+        .message-reply-label {
+          overflow: hidden;
+          font-size: 10px;
+          font-weight: 750;
+          line-height: 1.2;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .message-reply-content {
+          overflow: hidden;
+          font-size: 11px;
+          line-height: 1.3;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         .message-bubble {
           position: relative;
           max-width: min(66%, 620px);
@@ -4036,6 +4685,16 @@ function App() {
             max-width: 84%;
           }
 
+          .message-actions-trigger {
+            width: 28px;
+            height: 34px;
+            opacity: 1;
+          }
+
+          .message-actions-menu {
+            min-width: 122px;
+          }
+
           .send-message-error {
             margin: 0 10px 6px;
           }
@@ -4043,6 +4702,20 @@ function App() {
           .message-composer {
             gap: 8px;
             padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+          }
+
+          .message-editing-bar {
+            padding: 8px 9px;
+          }
+
+          .message-replying-bar {
+            padding: 8px 9px;
+          }
+
+          .message-editing-bar span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
 
           .message-composer textarea {
@@ -4640,6 +5313,7 @@ function App() {
                           return nextCounts;
                         });
 
+                        setOpenMessageActionId(null);
                         setSelectedConversationId(
                           conversation.id,
                         );
@@ -4910,53 +5584,199 @@ function App() {
                               }`}
                             >
                               <div
-                                className={`message-bubble ${
+                                className={`message-action-wrap ${
                                   isOwnMessage
-                                    ? "message-bubble-own"
-                                    : "message-bubble-other"
+                                    ? "message-action-wrap-own"
+                                    : "message-action-wrap-other"
                                 }`}
                               >
-                                {message.deletedAt ? (
-                                  <span className="deleted-message">
-                                    Message deleted
-                                  </span>
-                                ) : (
-                                  <span>
-                                    {
-                                      message.content
-                                    }
-                                  </span>
-                                )}
-
-                                <time
-                                  className="message-time"
-                                  dateTime={
-                                    message.createdAt
-                                  }
+                                <div
+                                  className={`message-bubble ${
+                                    isOwnMessage
+                                      ? "message-bubble-own"
+                                      : "message-bubble-other"
+                                  }`}
                                 >
-                                  {new Date(
-                                    message.createdAt,
-                                  ).toLocaleTimeString(
-                                    [],
-                                    {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
-                                  )}
-                                </time>
-
-                                {isOwnMessage &&
-                                  status &&
-                                  !message.deletedAt && (
-                                    <span
-                                      className={`message-status-indicator message-status-${status}`}
-                                      aria-label={`Message ${status}`}
+                                  {message.replyToMessage && (
+                                    <button
+                                      type="button"
+                                      className={`message-reply-preview ${
+                                        isOwnMessage
+                                          ? "message-reply-preview-own"
+                                          : "message-reply-preview-other"
+                                      }`}
+                                      onClick={() => {
+                                        scrollToMessage(message.replyToMessage!.id);
+                                      }}
+                                      title="Jump to replied message"
                                     >
-                                      {status === "sent"
-                                        ? "✓"
-                                        : "✓✓"}
+                                      <span className="message-reply-label">
+                                        Replying to @{message.replyToMessage.sender.username}
+                                      </span>
+                                      <span className="message-reply-content">
+                                        {message.replyToMessage.deletedAt
+                                          ? "Message deleted"
+                                          : message.replyToMessage.content}
+                                      </span>
+                                    </button>
+                                  )}
+
+                                  {message.deletedAt ? (
+                                    <span className="deleted-message">
+                                      Message deleted
+                                    </span>
+                                  ) : (
+                                    <span>
+                                      {
+                                        message.content
+                                      }
                                     </span>
                                   )}
+
+                                  <time
+                                    className="message-time"
+                                    dateTime={
+                                      message.createdAt
+                                    }
+                                  >
+                                    {new Date(
+                                      message.createdAt,
+                                    ).toLocaleTimeString(
+                                      [],
+                                      {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                        hour12: true,
+                                      },
+                                    )}
+                                  </time>
+
+                                  {isOwnMessage &&
+                                    status &&
+                                    !message.deletedAt && (
+                                      <span
+                                        className={`message-status-indicator message-status-${status}`}
+                                        aria-label={`Message ${status}`}
+                                      >
+                                        {status === "sent"
+                                          ? "✓"
+                                          : "✓✓"}
+                                      </span>
+                                    )}
+                                </div>
+
+                                <div
+                                  className={`message-actions ${
+                                    openMessageActionId === message.id
+                                      ? "message-actions-open"
+                                      : ""
+                                  }`}
+                                  onPointerDown={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="message-actions-trigger"
+                                    aria-label={`Message actions for ${
+                                      message.deletedAt
+                                        ? "deleted message"
+                                        : "message"
+                                    }`}
+                                    aria-expanded={
+                                      openMessageActionId === message.id
+                                    }
+                                    aria-haspopup="menu"
+                                    onClick={() => {
+                                      setOpenMessageActionId(
+                                        (currentId) =>
+                                          currentId === message.id
+                                            ? null
+                                            : message.id,
+                                      );
+                                    }}
+                                  >
+                                    <span aria-hidden="true">•••</span>
+                                  </button>
+
+                                  {openMessageActionId === message.id && (
+                                    <div
+                                      className="message-actions-menu"
+                                      role="menu"
+                                      aria-label="Message actions"
+                                    >
+                                      {isOwnMessage &&
+                                        !message.deletedAt && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => {
+                                                startEditingMessage(message);
+                                              }}
+                                            >
+                                              Edit
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => {
+                                                setOpenMessageActionId(null);
+                                                setMessageUpdateError("");
+                                                setDeletingMessageId(message.id);
+                                              }}
+                                            >
+                                              Delete
+                                            </button>
+                                          </>
+                                        )}
+
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          startReplyingToMessage(message);
+                                        }}
+                                      >
+                                        Reply
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {deletingMessageId === message.id && (
+                                  <div
+                                    className="message-delete-confirm"
+                                    role="dialog"
+                                    aria-label="Delete message confirmation"
+                                    onPointerDown={(event) => {
+                                      event.stopPropagation();
+                                    }}
+                                  >
+                                    <strong>Delete message?</strong>
+                                    <span>This cannot be undone.</span>
+
+                                    <div className="message-delete-confirm-actions">
+                                      <button
+                                        type="button"
+                                        className="message-delete-cancel"
+                                        onClick={cancelDeleteMessage}
+                                        disabled={deletingMessage}
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="message-delete-confirm-button"
+                                        onClick={handleDeleteMessage}
+                                        disabled={deletingMessage}
+                                      >
+                                        {deletingMessage ? "Deleting..." : "Delete"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -4974,12 +5794,70 @@ function App() {
                   </div>
                 )}
 
-                <div className="message-composer">
+                {messageUpdateError && (
+                  <div className="message-update-error" role="alert">
+                    {messageUpdateError}
+                  </div>
+                )}
+
+                <div className={`message-composer ${
+                  editingMessageId ? "message-composer-editing" : ""
+                }`}>
+                  {replyingToMessage && !editingMessageId && (
+                    <div className="message-replying-bar">
+                      <div className="message-replying-copy">
+                        <strong>Replying to @{replyingToMessage.sender.username}</strong>
+                        <span>
+                          {replyingToMessage.deletedAt
+                            ? "Message deleted"
+                            : replyingToMessage.content}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="message-reply-cancel-icon"
+                        onClick={cancelReplyingToMessage}
+                        aria-label="Cancel reply"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+
+                  {editingMessageId && (
+                    <div className="message-editing-bar">
+                      <div>
+                        <strong>Edit message</strong>
+                        <span>Update your message before saving.</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="message-edit-cancel-icon"
+                        onClick={cancelEditingMessage}
+                        aria-label="Cancel editing"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+
                   <textarea
-                    value={messageInput}
+                    value={
+                      editingMessageId
+                        ? editingMessageContent
+                        : messageInput
+                    }
                     onChange={(event) => {
                       const value =
                         event.target.value;
+
+                      if (editingMessageId) {
+                        setEditingMessageContent(value);
+                        setMessageUpdateError("");
+                        return;
+                      }
 
                       setMessageInput(value);
 
@@ -4996,6 +5874,13 @@ function App() {
                       ) {
                         event.preventDefault();
 
+                        if (editingMessageId) {
+                          if (editingMessageContent.trim() && !updatingMessage) {
+                            handleSaveEditedMessage();
+                          }
+                          return;
+                        }
+
                         if (
                           messageInput.trim() &&
                           !sendingMessage
@@ -5004,7 +5889,7 @@ function App() {
                         }
                       }
                     }}
-                    placeholder="Type a message..."
+                    placeholder={editingMessageId ? "Edit message..." : "Type a message..."}
                     rows={1}
                     inputMode="text"
                     enterKeyHint="send"
@@ -5026,20 +5911,42 @@ function App() {
                     }}
                   />
 
-                  <button
-                    type="button"
-                    onClick={
-                      handleSendMessage
-                    }
-                    disabled={
-                      sendingMessage ||
-                      !messageInput.trim()
-                    }
-                  >
-                    {sendingMessage
-                      ? "Sending..."
-                      : "Send"}
-                  </button>
+                  {editingMessageId ? (
+                    <>
+                      <button
+                        type="button"
+                        className="message-edit-cancel-button"
+                        onClick={cancelEditingMessage}
+                        disabled={updatingMessage}
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveEditedMessage}
+                        disabled={
+                          updatingMessage ||
+                          !editingMessageContent.trim()
+                        }
+                      >
+                        {updatingMessage ? "Saving..." : "Save"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSendMessage}
+                      disabled={
+                        sendingMessage ||
+                        !messageInput.trim()
+                      }
+                    >
+                      {sendingMessage
+                        ? "Sending..."
+                        : "Send"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
