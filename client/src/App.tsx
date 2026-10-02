@@ -523,6 +523,8 @@ function App() {
 
     const socket = connectSocket();
 
+    const currentUserId = user.id;
+
     function handleConversationListMessage(payload: {
       conversationId: string;
       message: Message;
@@ -537,7 +539,7 @@ function App() {
 
       const conversationId = payload.conversationId;
       const message = payload.message;
-      const isOwnMessage = message.senderId === user.id;
+      const isOwnMessage = message.senderId === currentUserId;
       const isCurrentConversation =
         selectedConversationId === conversationId;
 
