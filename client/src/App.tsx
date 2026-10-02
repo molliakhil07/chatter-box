@@ -341,8 +341,14 @@ function App() {
   const [replyingToMessage, setReplyingToMessage] =
     useState<Message | null>(null);
 
+  const [highlightedMessageId, setHighlightedMessageId] =
+    useState<string | null>(null);
+
   const messageListRef =
     useRef<HTMLDivElement | null>(null);
+
+  const messageHighlightTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /*
    * 4G-4 read tracking state.
@@ -623,6 +629,14 @@ function App() {
     };
   }, [user, selectedConversationId]);
 
+  useEffect(() => {
+    return () => {
+      if (messageHighlightTimeoutRef.current) {
+        clearTimeout(messageHighlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   /*
    * 7B-4A: close an open message-actions menu when
    * the user clicks anywhere outside the menu.
@@ -739,14 +753,37 @@ function App() {
       }
 
       setMessages((currentMessages) =>
-        currentMessages.map((message) =>
-          message.id === payload.message.id
-            ? payload.message
-            : message,
-        ),
+        currentMessages.map((message) => {
+          if (message.id === payload.message.id) {
+            return payload.message;
+          }
+
+          if (message.replyToMessageId === payload.message.id && message.replyToMessage) {
+            return {
+              ...message,
+              replyToMessage: {
+                ...message.replyToMessage,
+                content: payload.message.content,
+                deletedAt: payload.message.deletedAt,
+              },
+            };
+          }
+
+          return message;
+        }),
       );
 
       if (payload.message.deletedAt) {
+        setReplyingToMessage((currentReply) =>
+          currentReply?.id === payload.message.id
+            ? {
+                ...currentReply,
+                content: payload.message.content,
+                deletedAt: payload.message.deletedAt,
+              }
+            : currentReply,
+        );
+
         setMessageStatuses((currentStatuses) => {
           if (!(payload.message.id in currentStatuses)) {
             return currentStatuses;
@@ -756,7 +793,6 @@ function App() {
           delete updatedStatuses[payload.message.id];
           return updatedStatuses;
         });
-
       }
     }
 
@@ -1243,6 +1279,17 @@ function App() {
       behavior: "smooth",
       block: "center",
     });
+
+    setHighlightedMessageId(messageId);
+
+    if (messageHighlightTimeoutRef.current) {
+      clearTimeout(messageHighlightTimeoutRef.current);
+    }
+
+    messageHighlightTimeoutRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+      messageHighlightTimeoutRef.current = null;
+    }, 1400);
   }
 
   async function handleDeleteMessage() {
@@ -1262,11 +1309,24 @@ function App() {
       );
 
       setMessages((currentMessages) =>
-        currentMessages.map((message) =>
-          message.id === response.message.id
-            ? response.message
-            : message,
-        ),
+        currentMessages.map((message) => {
+          if (message.id === response.message.id) {
+            return response.message;
+          }
+
+          if (message.replyToMessageId === response.message.id && message.replyToMessage) {
+            return {
+              ...message,
+              replyToMessage: {
+                ...message.replyToMessage,
+                content: response.message.content,
+                deletedAt: response.message.deletedAt,
+              },
+            };
+          }
+
+          return message;
+        }),
       );
 
       setMessageStatuses((currentStatuses) => {
@@ -1322,12 +1382,40 @@ function App() {
       );
 
       setMessages((currentMessages) =>
-        currentMessages.map((message) =>
-          message.id === response.message.id
-            ? response.message
-            : message,
-        ),
+        currentMessages.map((message) => {
+          if (message.id === response.message.id) {
+            return response.message;
+          }
+
+          if (
+            message.replyToMessageId === response.message.id &&
+            message.replyToMessage
+          ) {
+            return {
+              ...message,
+              replyToMessage: {
+                ...message.replyToMessage,
+                content: response.message.content,
+                deletedAt: response.message.deletedAt,
+              },
+            };
+          }
+
+          return message;
+        }),
       );
+
+      if (response.message.deletedAt) {
+        setReplyingToMessage((currentReply) =>
+          currentReply?.id === response.message.id
+            ? {
+                ...currentReply,
+                content: response.message.content,
+                deletedAt: response.message.deletedAt,
+              }
+            : currentReply,
+        );
+      }
 
       setEditingMessageId(null);
       setEditingMessageContent("");
@@ -3962,6 +4050,40 @@ function App() {
           opacity: 0.55;
         }
 
+        .message-row-highlighted .message-bubble {
+          animation: message-reply-highlight 1.4s ease-out;
+        }
+
+        @keyframes message-reply-highlight {
+          0% {
+            transform: scale(1);
+            box-shadow: 0 3px 12px rgba(36, 50, 70, 0.04);
+          }
+
+          18% {
+            transform: scale(1.045);
+            box-shadow: 0 0 0 5px rgba(47, 114, 232, 0.16),
+              0 10px 28px rgba(47, 114, 232, 0.18);
+          }
+
+          42% {
+            transform: scale(1.02);
+            box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.11),
+              0 7px 20px rgba(47, 114, 232, 0.12);
+          }
+
+          72% {
+            transform: scale(1.03);
+            box-shadow: 0 0 0 4px rgba(47, 114, 232, 0.09),
+              0 6px 18px rgba(47, 114, 232, 0.09);
+          }
+
+          100% {
+            transform: scale(1);
+            box-shadow: 0 3px 12px rgba(36, 50, 70, 0.04);
+          }
+        }
+
         .message-reply-preview {
           width: 100%;
           display: flex;
@@ -3987,7 +4109,7 @@ function App() {
           color: var(--cb-text-muted);
         }
 
-        .message-reply-preview:hover {
+        .message-reply-preview:hover:not(:disabled) {
           opacity: 0.86;
         }
 
@@ -4226,6 +4348,12 @@ function App() {
           display: none;
         }
 
+        @media (prefers-reduced-motion: reduce) {
+          .message-row-highlighted .message-bubble {
+            animation: none;
+          }
+        }
+
         @media (max-width: 1100px) {
           .messenger-app {
             padding: 16px;
@@ -4241,6 +4369,9 @@ function App() {
         }
 
         @media (max-width: 768px) {
+  .message-replying-bar-above-composer {
+    margin: 0 10px;
+  }
           .user-info {
             display: block;
           }
@@ -5581,6 +5712,10 @@ function App() {
                                 isOwnMessage
                                   ? "message-row-own"
                                   : "message-row-other"
+                              } ${
+                                highlightedMessageId === message.id
+                                  ? "message-row-highlighted"
+                                  : ""
                               }`}
                             >
                               <div
@@ -5597,7 +5732,7 @@ function App() {
                                       : "message-bubble-other"
                                   }`}
                                 >
-                                  {message.replyToMessage && (
+                                  {!message.deletedAt && message.replyToMessage && (
                                     <button
                                       type="button"
                                       className={`message-reply-preview ${
@@ -5606,18 +5741,31 @@ function App() {
                                           : "message-reply-preview-other"
                                       }`}
                                       onClick={() => {
-                                        scrollToMessage(message.replyToMessage!.id);
+                                        if (message.replyToMessage && !message.replyToMessage.deletedAt) {
+                                          scrollToMessage(message.replyToMessage.id);
+                                        }
                                       }}
-                                      title="Jump to replied message"
+                                      title={
+                                        message.replyToMessage.deletedAt
+                                          ? "Original message deleted"
+                                          : "Jump to replied message"
+                                      }
+                                      disabled={Boolean(
+                                        message.replyToMessage.deletedAt,
+                                      )}
                                     >
                                       <span className="message-reply-label">
-                                        Replying to @{message.replyToMessage.sender.username}
-                                      </span>
-                                      <span className="message-reply-content">
                                         {message.replyToMessage.deletedAt
                                           ? "Message deleted"
-                                          : message.replyToMessage.content}
+                                          : message.replyToMessage.sender.id === user.id
+                                            ? "Replying to yourself"
+                                            : `Replying to @${message.replyToMessage.sender.username}`}
                                       </span>
+                                      {!message.replyToMessage.deletedAt && (
+                                        <span className="message-reply-content">
+                                          {message.replyToMessage.content}
+                                        </span>
+                                      )}
                                     </button>
                                   )}
 
@@ -5646,7 +5794,6 @@ function App() {
                                       {
                                         hour: "2-digit",
                                         minute: "2-digit",
-                                        hour12: true,
                                       },
                                     )}
                                   </time>
@@ -5800,31 +5947,35 @@ function App() {
                   </div>
                 )}
 
+                {replyingToMessage && !editingMessageId && (
+                  <div className="message-replying-bar message-replying-bar-above-composer">
+                    <div className="message-replying-copy">
+                      <strong>
+                        {replyingToMessage.deletedAt
+                          ? "Message deleted"
+                          : replyingToMessage.sender.id === user?.id
+                            ? "Replying to yourself"
+                            : `Replying to @${replyingToMessage.sender.username}`}
+                      </strong>
+                      {!replyingToMessage.deletedAt && (
+                        <span>{replyingToMessage.content}</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="message-reply-cancel-icon"
+                      onClick={cancelReplyingToMessage}
+                      aria-label="Cancel reply"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
                 <div className={`message-composer ${
                   editingMessageId ? "message-composer-editing" : ""
                 }`}>
-                  {replyingToMessage && !editingMessageId && (
-                    <div className="message-replying-bar">
-                      <div className="message-replying-copy">
-                        <strong>Replying to @{replyingToMessage.sender.username}</strong>
-                        <span>
-                          {replyingToMessage.deletedAt
-                            ? "Message deleted"
-                            : replyingToMessage.content}
-                        </span>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="message-reply-cancel-icon"
-                        onClick={cancelReplyingToMessage}
-                        aria-label="Cancel reply"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  )}
-
                   {editingMessageId && (
                     <div className="message-editing-bar">
                       <div>
@@ -6165,5 +6316,6 @@ function App() {
     </div>
   );
 }
+
 
 export default App;
