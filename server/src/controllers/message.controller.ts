@@ -53,18 +53,18 @@ export async function create(
       return;
     }
 
-    const conversation = await prisma.conversation.findUnique({
-      where: {
-        id: conversationId,
-      },
-      select: {
-        members: {
-          select: {
-            userId: true,
+    const conversationMembers =
+      await prisma.conversationMember.findMany({
+        where: {
+          conversationId,
+          userId: {
+            not: userId,
           },
         },
-      },
-    });
+        select: {
+          userId: true,
+        },
+      });
 
     const realtimePayload = {
       conversationId,
@@ -72,9 +72,8 @@ export async function create(
     };
 
     /*
-     * Keep the conversation-room event for clients already inside
-     * the chat, and also send the event to each other member's
-     * private user room so unread indicators work from another chat.
+     * Keep the existing conversation-room event for users who
+     * currently have this chat open.
      */
     emitToConversation(
       conversationId,
@@ -82,11 +81,12 @@ export async function create(
       realtimePayload,
     );
 
-    for (const member of conversation?.members ?? []) {
-      if (member.userId === userId) {
-        continue;
-      }
-
+    /*
+     * Also notify each recipient's private user room. This is
+     * required when the recipient is on another screen/chat and
+     * needs the conversation-list unread indicator.
+     */
+    for (const member of conversationMembers) {
       emitToUser(
         member.userId,
         "message_new",
@@ -139,39 +139,20 @@ export async function list(
       return;
     }
 
-    const messageResult = await getConversationMessages(
+    const messages = await getConversationMessages(
       conversationId,
       userId,
       cursor,
     );
 
-    if (!messageResult) {
+    if (!messages) {
       res.status(404).json({
         error: "Conversation not found",
       });
       return;
     }
 
-    /*
-     * message.service currently returns the paginated result in the
-     * project shape `{ items, nextCursor }`. Keep this controller
-     * compatible with the older array return shape as well so the
-     * response contract sent to the frontend is always the same.
-     */
-    const messages = Array.isArray(messageResult)
-      ? messageResult
-      : messageResult.items;
-
-    const nextCursor = Array.isArray(messageResult)
-      ? messages.length === 50
-        ? messages[messages.length - 1]?.id ?? null
-        : null
-      : messageResult.nextCursor ?? null;
-
-    res.status(200).json({
-      items: messages,
-      nextCursor,
-    });
+    res.status(200).json({ messages });
   } catch (error) {
     console.error("Message retrieval failed:", error);
     res.status(500).json({
