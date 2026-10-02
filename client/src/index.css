@@ -1937,3 +1937,37 @@ a:visited {
   background: #222222;
   color: #ffffff;
 }
+
+
+/* =========================================================
+   UNREAD CONVERSATION INDICATOR
+   ========================================================= */
+
+.conversation-unread-indicator {
+  min-width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #111111 !important;
+  color: #ffffff !important;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.conversation-item-selected .conversation-unread-indicator {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .conversation-unread-indicator {
+    min-width: 22px;
+    height: 22px;
+    margin-left: auto;
+    padding: 0 6px;
+  }
+}

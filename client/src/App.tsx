@@ -31,18 +31,6 @@ type MessageStatus =
   | "delivered"
   | "read";
 
-type PresencePayload = {
-  userId: string;
-  online: boolean;
-  lastSeenAt: string | null;
-};
-
-type TypingPayload = {
-  conversationId: string;
-  userId: string;
-  isTyping: boolean;
-};
-
 type MessageStatusPayload = {
   messageId: string;
   status: MessageStatus;
@@ -173,28 +161,6 @@ function formatMessageRequestTime(
     day: "numeric",
     month: "short",
   });
-}
-
-function formatLastSeen(
-  lastSeenAt: string | null,
-): string {
-  if (!lastSeenAt) {
-    return "Offline";
-  }
-
-  const date = new Date(lastSeenAt);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Offline";
-  }
-
-  return `Last seen ${date.toLocaleString(
-    [],
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-    },
-  )}`;
 }
 
 function App() {
@@ -333,24 +299,11 @@ function App() {
     useState<Record<string, MessageStatus>>({});
 
   /*
-   * 4F presence state.
+   * Unread/new-message state for conversations that are
+   * not currently open. The count is realtime UI state.
    */
-  const [otherUserOnline, setOtherUserOnline] =
-    useState(false);
-
-  const [otherUserLastSeenAt, setOtherUserLastSeenAt] =
-    useState<string | null>(null);
-
-  /*
-   * 4F typing state.
-   */
-  const [otherUserTyping, setOtherUserTyping] =
-    useState(false);
-
-  const typingStopTimeoutRef =
-    useRef<ReturnType<typeof setTimeout> | null>(
-      null,
-    );
+  const [unreadCounts, setUnreadCounts] =
+    useState<Record<string, number>>({});
 
   const messageListRef =
     useRef<HTMLDivElement | null>(null);
@@ -559,6 +512,80 @@ function App() {
   }, [user]);
 
   /*
+   * Receive new-message events at the user level as well as
+   * inside the active conversation room. This keeps the
+   * conversation list updated even when the chat is closed.
+   */
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const socket = connectSocket();
+
+    function handleConversationListMessage(payload: {
+      conversationId: string;
+      message: Message;
+    }) {
+      if (
+        !payload ||
+        typeof payload.conversationId !== "string" ||
+        !payload.message
+      ) {
+        return;
+      }
+
+      const conversationId = payload.conversationId;
+      const message = payload.message;
+      const isOwnMessage = message.senderId === user.id;
+      const isCurrentConversation =
+        selectedConversationId === conversationId;
+
+      setConversations((currentConversations) => {
+        const existingConversation = currentConversations.find(
+          (conversation) => conversation.id === conversationId,
+        );
+
+        if (!existingConversation) {
+          return currentConversations;
+        }
+
+        const updatedConversation = {
+          ...existingConversation,
+          updatedAt: message.createdAt,
+        };
+
+        return [
+          updatedConversation,
+          ...currentConversations.filter(
+            (conversation) => conversation.id !== conversationId,
+          ),
+        ];
+      });
+
+      if (!isOwnMessage && !isCurrentConversation) {
+        setUnreadCounts((currentCounts) => ({
+          ...currentCounts,
+          [conversationId]:
+            (currentCounts[conversationId] ?? 0) + 1,
+        }));
+      }
+    }
+
+    socket.on(
+      "message_new",
+      handleConversationListMessage,
+    );
+
+    return () => {
+      socket.off(
+        "message_new",
+        handleConversationListMessage,
+      );
+    };
+  }, [user, selectedConversationId]);
+
+  /*
    * Join selected conversation room,
    * receive realtime messages,
    * receive message status updates.
@@ -755,121 +782,6 @@ function App() {
   }, [
     selectedConversationId,
     user?.id,
-  ]);
-
-  /*
-   * 4F presence and typing events.
-   */
-  useEffect(() => {
-    const conversationId =
-      selectedConversationId ?? "";
-
-    if (!conversationId || !user) {
-      setOtherUserOnline(false);
-      setOtherUserLastSeenAt(null);
-      setOtherUserTyping(false);
-      return;
-    }
-
-    const selectedConversation =
-      conversations.find(
-        (conversation) =>
-          conversation.id ===
-          conversationId,
-      );
-
-    const otherMember =
-      selectedConversation?.members.find(
-        (member) =>
-          member.userId !== user.id,
-      );
-
-    if (!otherMember) {
-      setOtherUserOnline(false);
-      setOtherUserLastSeenAt(null);
-      setOtherUserTyping(false);
-      return;
-    }
-
-    const otherUserId =
-      otherMember.userId;
-
-    const socket = connectSocket();
-
-    function handlePresenceUpdate(
-      payload: PresencePayload,
-    ) {
-      if (
-        payload.userId !==
-        otherUserId
-      ) {
-        return;
-      }
-
-      setOtherUserOnline(
-        payload.online,
-      );
-
-      setOtherUserLastSeenAt(
-        payload.lastSeenAt,
-      );
-    }
-
-    function handleTypingUpdate(
-      payload: TypingPayload,
-    ) {
-      if (
-        payload.conversationId !==
-          conversationId ||
-        payload.userId !==
-          otherUserId
-      ) {
-        return;
-      }
-
-      setOtherUserTyping(
-        payload.isTyping,
-      );
-    }
-
-    socket.on(
-      "presence_updated",
-      handlePresenceUpdate,
-    );
-
-    socket.on(
-      "typing_updated",
-      handleTypingUpdate,
-    );
-
-    return () => {
-      socket.off(
-        "presence_updated",
-        handlePresenceUpdate,
-      );
-
-      socket.off(
-        "typing_updated",
-        handleTypingUpdate,
-      );
-
-      if (
-        typingStopTimeoutRef.current
-      ) {
-        clearTimeout(
-          typingStopTimeoutRef.current,
-        );
-
-        typingStopTimeoutRef.current =
-          null;
-      }
-
-      setOtherUserTyping(false);
-    };
-  }, [
-    selectedConversationId,
-    conversations,
-    user,
   ]);
 
   /*
@@ -1151,44 +1063,6 @@ function App() {
   }
 
   /*
-   * Emit typing start.
-   */
-  function sendTypingStart() {
-    const conversationId =
-      selectedConversationId;
-
-    if (!conversationId) {
-      return;
-    }
-
-    const socket = connectSocket();
-
-    socket.emit(
-      "typing_start",
-      conversationId,
-    );
-  }
-
-  /*
-   * Emit typing stop.
-   */
-  function sendTypingStop() {
-    const conversationId =
-      selectedConversationId;
-
-    if (!conversationId) {
-      return;
-    }
-
-    const socket = connectSocket();
-
-    socket.emit(
-      "typing_stop",
-      conversationId,
-    );
-  }
-
-  /*
    * Send a message through REST.
    */
   async function handleSendMessage() {
@@ -1205,19 +1079,6 @@ function App() {
     ) {
       return;
     }
-
-    if (
-      typingStopTimeoutRef.current
-    ) {
-      clearTimeout(
-        typingStopTimeoutRef.current,
-      );
-
-      typingStopTimeoutRef.current =
-        null;
-    }
-
-    sendTypingStop();
 
     setSendingMessage(true);
     setSendMessageError(false);
@@ -1293,9 +1154,7 @@ function App() {
       setMessages([]);
       setNextCursor(null);
       setMessageStatuses({});
-      setOtherUserOnline(false);
-      setOtherUserLastSeenAt(null);
-      setOtherUserTyping(false);
+      setUnreadCounts({});
       setConversationSearch("");
       setAuthMode("login");
       setAuthPassword("");
@@ -4765,11 +4624,24 @@ function App() {
                           ? "conversation-item-selected"
                           : ""
                       }`}
-                      onClick={() =>
+                      onClick={() => {
+                        setUnreadCounts((currentCounts) => {
+                          if (!(conversation.id in currentCounts)) {
+                            return currentCounts;
+                          }
+
+                          const nextCounts = {
+                            ...currentCounts,
+                          };
+
+                          delete nextCounts[conversation.id];
+                          return nextCounts;
+                        });
+
                         setSelectedConversationId(
                           conversation.id,
-                        )
-                      }
+                        );
+                      }}
                     >
                       <div className="conversation-avatar">
                         {otherMember.user
@@ -4794,6 +4666,19 @@ function App() {
                           {displayName}
                         </strong>
                       </div>
+
+                      {unreadCounts[conversation.id] > 0 && (
+                        <span
+                          className="conversation-unread-indicator"
+                          aria-label={`${unreadCounts[conversation.id]} unread message${
+                            unreadCounts[conversation.id] === 1 ? "" : "s"
+                          }`}
+                        >
+                          {unreadCounts[conversation.id] > 99
+                            ? "99+"
+                            : unreadCounts[conversation.id]}
+                        </span>
+                      )}
 
                       <time
                         className="conversation-time"
@@ -4932,15 +4817,7 @@ function App() {
                     }
                   </h2>
 
-                  <small>
-                    {otherUserTyping
-                      ? "Typing..."
-                      : otherUserOnline
-                        ? "Online"
-                        : formatLastSeen(
-                            otherUserLastSeenAt,
-                          )}
-                  </small>
+                  <small>@{selectedOtherMember.user.username}</small>
                 </div>
               </header>
 
@@ -5108,40 +4985,6 @@ function App() {
                         false,
                       );
 
-                      if (
-                        value.trim()
-                      ) {
-                        sendTypingStart();
-
-                        if (
-                          typingStopTimeoutRef.current
-                        ) {
-                          clearTimeout(
-                            typingStopTimeoutRef.current,
-                          );
-                        }
-
-                        typingStopTimeoutRef.current =
-                          setTimeout(() => {
-                            sendTypingStop();
-
-                            typingStopTimeoutRef.current =
-                              null;
-                          }, 1500);
-                      } else {
-                        if (
-                          typingStopTimeoutRef.current
-                        ) {
-                          clearTimeout(
-                            typingStopTimeoutRef.current,
-                          );
-
-                          typingStopTimeoutRef.current =
-                            null;
-                        }
-
-                        sendTypingStop();
-                      }
                     }}
                     onKeyDown={(event) => {
                       if (
