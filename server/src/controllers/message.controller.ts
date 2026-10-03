@@ -14,7 +14,7 @@ export async function create(
   try {
     const userId = req.userId;
     const { conversationId } = req.params;
-    const { content, replyToMessageId } = req.body;
+    const { content } = req.body;
 
     if (!userId) {
       res.status(401).json({
@@ -40,41 +40,18 @@ export async function create(
       return;
     }
 
-    if (
-      replyToMessageId !== undefined &&
-      (typeof replyToMessageId !== "string" ||
-        replyToMessageId.trim().length === 0)
-    ) {
-      res.status(400).json({
-        error: "replyToMessageId must be a valid message id",
-      });
-      return;
-    }
-
-    const messageResult = await createMessage(
+    const message = await createMessage(
       conversationId,
       userId,
       content.trim(),
-      typeof replyToMessageId === "string"
-        ? replyToMessageId
-        : undefined,
     );
 
-    if (messageResult.status === "conversation_not_found") {
+    if (!message) {
       res.status(404).json({
         error: "Conversation not found",
       });
       return;
     }
-
-    if (messageResult.status === "invalid_reply") {
-      res.status(400).json({
-        error: "Reply target message was not found in this conversation",
-      });
-      return;
-    }
-
-    const message = messageResult.message;
 
     const conversationMembers =
       await prisma.conversationMember.findMany({
@@ -255,71 +232,15 @@ export async function update(
       return;
     }
 
-    /*
-     * The service uses the same `deleted` status for a successful
-     * deletion and for an already-deleted message. A successful
-     * deletion includes `message`; an already-deleted message does
-     * not. Only the latter should be treated as a conflict.
-     */
-    if (
-      result.status === "deleted" &&
-      !("message" in result)
-    ) {
+    if (result.status === "deleted") {
       res.status(409).json({
         error: "Message has already been deleted",
       });
       return;
     }
 
-    const updatedMessage = result.message;
-
-if (!updatedMessage) {
-  res.status(500).json({
-    error: "Message update did not return a message",
-  });
-  return;
-}
-
-const conversationId = updatedMessage.conversationId;
-
-    const conversationMembers =
-      await prisma.conversationMember.findMany({
-        where: {
-          conversationId,
-        },
-        select: {
-          userId: true,
-        },
-      });
-
-    const realtimePayload = {
-      conversationId,
-      message: updatedMessage,
-    };
-
-    /*
-     * Notify users who currently have this conversation open.
-     */
-    emitToConversation(
-      conversationId,
-      "message_updated",
-      realtimePayload,
-    );
-
-    /*
-     * Also notify every conversation member's private room so
-     * edits/deletions reach users who are viewing another chat.
-     */
-    for (const member of conversationMembers) {
-      emitToUser(
-        member.userId,
-        "message_updated",
-        realtimePayload,
-      );
-    }
-
     res.status(200).json({
-      message: updatedMessage,
+      message: result.message,
     });
   } catch (error) {
     console.error("Message update failed:", error);

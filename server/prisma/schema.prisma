@@ -36,10 +36,11 @@ model Conversation {
 }
 
 model ConversationMember {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   conversationId String
   userId         String
-  joinedAt       DateTime @default(now())
+  joinedAt       DateTime  @default(now())
+  clearedAt      DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -49,13 +50,13 @@ model ConversationMember {
 }
 
 model Message {
-  id             String    @id @default(uuid())
-  conversationId String
-  senderId       String
-  content        String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id               String    @id @default(uuid())
+  conversationId   String
+  senderId         String
+  content          String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
   replyToMessageId String?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -91,14 +92,14 @@ enum MessageRequestStatus {
 }
 
 model MessageRequest {
-  id          String               @id @default(uuid())
-  senderId    String
-  receiverId  String
-  status      MessageRequestStatus @default(PENDING)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  respondedAt       DateTime?
-  acceptedSeenAt    DateTime?
+  id             String               @id @default(uuid())
+  senderId       String
+  receiverId     String
+  status         MessageRequestStatus @default(PENDING)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  respondedAt    DateTime?
+  acceptedSeenAt DateTime?
 
   sender   User @relation("SentMessageRequests", fields: [senderId], references: [id], onDelete: Cascade)
   receiver User @relation("ReceivedMessageRequests", fields: [receiverId], references: [id], onDelete: Cascade)

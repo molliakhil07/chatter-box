@@ -104,6 +104,10 @@ export async function getConversationMessages(
         userId,
       },
     },
+    select: {
+      id: true,
+      clearedAt: true,
+    },
   });
 
   if (!membership) {
@@ -113,6 +117,13 @@ export async function getConversationMessages(
   const messages = await prisma.message.findMany({
     where: {
       conversationId,
+      ...(membership.clearedAt
+        ? {
+            createdAt: {
+              gt: membership.clearedAt,
+            },
+          }
+        : {}),
     },
     orderBy: {
       createdAt: "desc",
