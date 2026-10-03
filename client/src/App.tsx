@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -114,6 +115,57 @@ function formatConversationTime(
   }
 
   return date.toLocaleDateString();
+}
+
+function isSameCalendarDay(
+  firstDate: Date,
+  secondDate: Date,
+): boolean {
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
+}
+
+function formatMessageDateSeparator(createdAt: string): string {
+  const date = new Date(createdAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (isSameCalendarDay(date, today)) {
+    return "Today";
+  }
+
+  if (isSameCalendarDay(date, yesterday)) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString([], {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatMessageTime(createdAt: string): string {
+  const date = new Date(createdAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 function formatMessageRequestTime(
@@ -4315,6 +4367,26 @@ function App() {
           color: rgba(255, 255, 255, 0.72);
         }
 
+        .message-date-separator {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          margin: 18px 0 12px;
+          color: var(--cb-text-muted);
+          font-size: 11px;
+          font-weight: 650;
+          line-height: 1;
+        }
+
+        .message-date-separator span {
+          padding: 6px 10px;
+          border: 1px solid var(--cb-border);
+          border-radius: 999px;
+          background: #f7f8fa;
+          box-shadow: 0 1px 3px rgba(36, 50, 70, 0.04);
+        }
+
         .older-messages-loading {
           padding: 8px 0 12px;
           color: var(--cb-text-muted);
@@ -4942,6 +5014,10 @@ function App() {
             overscroll-behavior: contain;
             -webkit-overflow-scrolling: touch;
             padding: 16px 12px 8px;
+          }
+
+          .message-date-separator {
+            margin: 14px 0 10px;
           }
 
           .message-bubble {
@@ -5859,7 +5935,7 @@ function App() {
                       </div>
                     ) : (
                       messages.map(
-                        (message) => {
+                        (message, messageIndex) => {
                           const isOwnMessage =
                             message.senderId ===
                             user.id;
@@ -5869,9 +5945,29 @@ function App() {
                               message.id
                             ];
 
+                          const previousMessage =
+                            messages[messageIndex - 1];
+
+                          const showDateSeparator =
+                            !previousMessage ||
+                            !isSameCalendarDay(
+                              new Date(previousMessage.createdAt),
+                              new Date(message.createdAt),
+                            );
+
                           return (
+                            <Fragment key={message.id}>
+                              {showDateSeparator && (
+                                <div className="message-date-separator">
+                                  <span>
+                                    {formatMessageDateSeparator(
+                                      message.createdAt,
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+
                             <div
-                              key={message.id}
                               data-message-id={message.id}
                               data-message-sender-id={message.senderId}
                               className={`message-row ${
@@ -5936,14 +6032,8 @@ function App() {
                                       message.createdAt
                                     }
                                   >
-                                    {new Date(
+                                    {formatMessageTime(
                                       message.createdAt,
-                                    ).toLocaleTimeString(
-                                      [],
-                                      {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      },
                                     )}
                                   </time>
 
@@ -6075,6 +6165,7 @@ function App() {
                                 )}
                               </div>
                             </div>
+                            </Fragment>
                           );
                         },
                       )
