@@ -3725,24 +3725,24 @@ function App() {
         }
 
         .chat-header-menu-button {
-          width: 42px;
+          width: 32px;
           height: 42px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           padding: 0;
-          border: 1px solid var(--cb-border);
-          border-radius: 50%;
-          background: #ffffff;
-          color: var(--cb-text);
+          border: 0;
+          border-radius: 0;
+          background: transparent;
+          color: var(--cb-text-muted);
           cursor: pointer;
-          box-shadow: 0 2px 8px rgba(24, 39, 58, 0.06);
-          transition: background 140ms ease, border-color 140ms ease;
+          box-shadow: none;
+          transition: color 140ms ease, background 140ms ease;
         }
 
         .chat-header-menu-button:hover {
-          background: #f5f6f8;
-          border-color: var(--cb-border-strong);
+          background: transparent;
+          color: var(--cb-text);
         }
 
         .chat-header-menu-button:focus-visible {
@@ -3752,11 +3752,10 @@ function App() {
 
         .chat-header-menu-button span {
           display: block;
-          transform: translateY(-2px);
-          font-size: 16px;
+          font-size: 24px;
           font-weight: 800;
-          letter-spacing: 2px;
           line-height: 1;
+          transform: translateY(-1px);
         }
 
         .chat-header-menu {
@@ -3957,12 +3956,15 @@ function App() {
           line-height: 1.35;
         }
 
-        .message-composer-editing {
+        .message-composer-editing,
+        .message-composer-with-context {
           flex-wrap: wrap;
         }
 
         .message-replying-bar {
           width: 100%;
+          flex: 0 0 100%;
+          box-sizing: border-box;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -4015,6 +4017,8 @@ function App() {
 
         .message-editing-bar {
           width: 100%;
+          flex: 0 0 100%;
+          box-sizing: border-box;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -4948,7 +4952,7 @@ function App() {
           }
 
           .chat-header-menu-button {
-            width: 38px;
+            width: 32px;
             height: 38px;
           }
 
@@ -5850,7 +5854,7 @@ function App() {
                       setChatMenuOpen((isOpen) => !isOpen);
                     }}
                   >
-                    <span aria-hidden="true">•••</span>
+                    <span aria-hidden="true">⋮</span>
                   </button>
 
                   {chatMenuOpen && (
@@ -6188,7 +6192,11 @@ function App() {
                 )}
 
                 <div className={`message-composer ${
-                  editingMessageId ? "message-composer-editing" : ""
+                  editingMessageId
+                    ? "message-composer-editing"
+                    : replyingToMessage
+                      ? "message-composer-with-context"
+                      : ""
                 }`}>
                   {replyingToMessage && !editingMessageId && (
                     <div className="message-replying-bar">
