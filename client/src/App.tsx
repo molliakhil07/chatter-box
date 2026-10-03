@@ -266,15 +266,6 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] =
     useState<string | null>(null);
 
-  /*
-   * Preserve the currently open conversation across a browser refresh.
-   * sessionStorage is intentional here: the active chat survives a
-   * refresh in the current tab, but it does not become a permanent
-   * post-login destination.
-   */
-  const ACTIVE_CONVERSATION_STORAGE_KEY_PREFIX =
-    "chatter-box-active-conversation-id:";
-
   const [profileOpen, setProfileOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
 
@@ -569,66 +560,6 @@ function App() {
       cancelled = true;
     };
   }, [user]);
-
-  /*
-   * 7B-7 refresh continuity.
-   *
-   * Restore the chat that was open immediately before a browser
-   * refresh, but only after the authenticated conversation list is
-   * available. This prevents a stale or unauthorized conversation id
-   * from being opened.
-   */
-  useEffect(() => {
-    if (!user || conversationsLoading) {
-      return;
-    }
-
-    const storageKey =
-      `${ACTIVE_CONVERSATION_STORAGE_KEY_PREFIX}${user.id}`;
-
-    const storedConversationId =
-      sessionStorage.getItem(storageKey);
-
-    if (!storedConversationId) {
-      return;
-    }
-
-    const conversationExists =
-      conversations.some(
-        (conversation) =>
-          conversation.id === storedConversationId,
-      );
-
-    if (conversationExists) {
-      setSelectedConversationId(
-        storedConversationId,
-      );
-      return;
-    }
-
-    sessionStorage.removeItem(storageKey);
-  }, [user, conversations]);
-
-  /*
-   * Persist the currently open conversation so a browser refresh
-   * returns the user to the same chat. A null selection is not
-   * written here, because the stored value must survive the brief
-   * initial render during refresh before authentication and
-   * conversations finish loading.
-   */
-  useEffect(() => {
-    if (!user || !selectedConversationId) {
-      return;
-    }
-
-    const storageKey =
-      `${ACTIVE_CONVERSATION_STORAGE_KEY_PREFIX}${user.id}`;
-
-    sessionStorage.setItem(
-      storageKey,
-      selectedConversationId,
-    );
-  }, [user, selectedConversationId]);
 
   /*
    * Establish authenticated Socket.IO connection.
@@ -1068,11 +999,19 @@ function App() {
         );
 
         /*
-         * Existing own messages have at
-         * least been persisted successfully.
-         * Until a realtime delivery event is
-         * observed, keep them at sent.
+         * Restore persisted read state from the
+         * recipient's conversation-member read pointer.
+         *
+         * Messages that have been read remain read after
+         * refresh. Messages without a persisted read state
+         * keep the existing sent state until delivery/read
+         * realtime events are observed.
          */
+        const persistedReadMessageIds =
+          new Set(
+            response.readMessageIds ?? [],
+          );
+
         const initialStatuses: Record<
           string,
           MessageStatus
@@ -1087,7 +1026,11 @@ function App() {
           ) {
             initialStatuses[
               message.id
-            ] = "sent";
+            ] = persistedReadMessageIds.has(
+              message.id,
+            )
+              ? "read"
+              : "sent";
           }
         }
 
@@ -1148,10 +1091,20 @@ function App() {
   ]);
 
   /*
-   * Keep the mobile composer visible when the on-screen
-   * keyboard changes the visual viewport. This does not
-   * move the message history; it only lets the browser
-   * keep the focused input in view.
+   * 7B-6-4 FIX-B: keep the chat surface locked to the
+   * visible mobile viewport when the on-screen keyboard
+   * opens.
+   *
+   * The previous implementation used scrollIntoView() on
+   * the focused textarea. On mobile browsers that can scroll
+   * the whole page instead of resizing the chat surface,
+   * which makes the message history difficult to reach while
+   * the keyboard is open.
+   *
+   * Instead, track visualViewport.height in a CSS variable,
+   * keep the messenger itself at that height, and preserve
+   * the message list's bottom position when the viewport
+   * changes.
    */
   useEffect(() => {
     if (!selectedConversationId) {
@@ -1159,39 +1112,83 @@ function App() {
     }
 
     const viewport = window.visualViewport;
+    const root = document.documentElement;
+    const body = document.body;
 
-    if (!viewport) {
-      return;
-    }
+    const updateViewportHeight = () => {
+      const height =
+        viewport?.height ?? window.innerHeight;
+
+      root.style.setProperty(
+        "--cb-mobile-vh",
+        `${height}px`,
+      );
+    };
 
     const handleViewportResize = () => {
-      const composer =
-        document.querySelector<HTMLTextAreaElement>(
-          ".message-composer textarea:focus",
-        );
+      const messageList =
+        messageListRef.current;
 
-      if (!composer) {
-        return;
-      }
+      const distanceFromBottom =
+        messageList
+          ? messageList.scrollHeight -
+            messageList.scrollTop -
+            messageList.clientHeight
+          : 0;
+
+      updateViewportHeight();
 
       requestAnimationFrame(() => {
-        composer.scrollIntoView({
-          block: "nearest",
-          inline: "nearest",
-        });
+        const updatedMessageList =
+          messageListRef.current;
+
+        if (
+          !updatedMessageList ||
+          distanceFromBottom > 120
+        ) {
+          return;
+        }
+
+        updatedMessageList.scrollTop =
+          updatedMessageList.scrollHeight;
       });
     };
 
-    viewport.addEventListener(
+    updateViewportHeight();
+
+    /*
+     * Prevent the document itself from becoming the scroll
+     * container while a conversation is open on mobile.
+     * The message list remains the dedicated scroll surface.
+     */
+    const previousBodyOverflow =
+      body.style.overflow;
+    body.style.overflow = "hidden";
+
+    viewport?.addEventListener(
+      "resize",
+      handleViewportResize,
+    );
+    window.addEventListener(
       "resize",
       handleViewportResize,
     );
 
     return () => {
-      viewport.removeEventListener(
+      viewport?.removeEventListener(
         "resize",
         handleViewportResize,
       );
+      window.removeEventListener(
+        "resize",
+        handleViewportResize,
+      );
+
+      root.style.removeProperty(
+        "--cb-mobile-vh",
+      );
+      body.style.overflow =
+        previousBodyOverflow;
     };
   }, [selectedConversationId]);
 
@@ -1246,10 +1243,15 @@ function App() {
       );
 
       /*
-       * Add status entries for older own
-       * messages without replacing statuses
-       * already known for newer messages.
+       * Restore persisted read state for older own
+       * messages without replacing statuses already
+       * known for newer messages.
        */
+      const persistedReadMessageIds =
+        new Set(
+          response.readMessageIds ?? [],
+        );
+
       setMessageStatuses(
         (currentStatuses) => {
           const updatedStatuses = {
@@ -1260,16 +1262,22 @@ function App() {
             const message of olderMessages
           ) {
             if (
-              message.senderId ===
-              user?.id &&
-              !updatedStatuses[
+              message.senderId !==
+              user?.id ||
+              updatedStatuses[
                 message.id
               ]
             ) {
-              updatedStatuses[
-                message.id
-              ] = "sent";
+              continue;
             }
+
+            updatedStatuses[
+              message.id
+            ] = persistedReadMessageIds.has(
+              message.id,
+            )
+              ? "read"
+              : "sent";
           }
 
           return updatedStatuses;
@@ -1559,11 +1567,6 @@ function App() {
       setUser(null);
       setConversations([]);
       setConversationError(false);
-      if (user) {
-        sessionStorage.removeItem(
-          `${ACTIVE_CONVERSATION_STORAGE_KEY_PREFIX}${user.id}`,
-        );
-      }
       setSelectedConversationId(null);
       setProfileOpen(false);
       setMessages([]);
@@ -4641,11 +4644,14 @@ function App() {
             display: block;
           }
           .messenger-app {
-            min-height: 100dvh;
-            height: 100dvh;
+            min-height: var(--cb-mobile-vh, 100dvh);
+            height: var(--cb-mobile-vh, 100dvh);
+            max-height: var(--cb-mobile-vh, 100dvh);
             padding: 0;
             overflow: hidden;
             background: #ffffff;
+            position: fixed;
+            inset: 0;
           }
 
           .messenger-header {
@@ -4654,8 +4660,9 @@ function App() {
 
           .messenger-layout {
             width: 100%;
-            height: 100dvh;
+            height: 100%;
             min-height: 0;
+            max-height: 100%;
             margin: 0;
             display: flex;
             border: 0;
@@ -5011,8 +5018,13 @@ function App() {
           }
 
           .chat-window {
+            width: 100%;
             height: 100%;
             min-height: 0;
+            max-height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
           }
 
           .chat-header {
@@ -5078,20 +5090,24 @@ function App() {
 
           .chat-content {
             display: flex;
-            flex: 1 1 auto;
+            flex: 1 1 0;
             flex-direction: column;
             min-height: 0;
             overflow: hidden;
           }
 
           .message-list {
-            flex: 1 1 auto;
+            flex: 1 1 0;
+            min-width: 0;
             min-height: 0;
+            height: 0;
             overflow-y: auto;
             overflow-x: hidden;
             overscroll-behavior: contain;
             -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             padding: 16px 12px 8px;
+            scroll-padding-bottom: 12px;
           }
 
           .message-date-separator {
@@ -5117,8 +5133,13 @@ function App() {
           }
 
           .message-composer {
+            position: relative;
+            z-index: 2;
+            flex: 0 0 auto;
             gap: 8px;
             padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            background: #ffffff;
           }
 
           .message-editing-bar {
@@ -5870,11 +5891,6 @@ function App() {
                   className="mobile-back-button"
                   onClick={() => {
                     setChatMenuOpen(false);
-                    if (user) {
-                      sessionStorage.removeItem(
-                        `${ACTIVE_CONVERSATION_STORAGE_KEY_PREFIX}${user.id}`,
-                      );
-                    }
                     setSelectedConversationId(null);
                   }}
                   aria-label="Back to conversations"
