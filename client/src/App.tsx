@@ -8,6 +8,7 @@ import {
   getConversationMessages,
   getConversations,
   getCurrentUser,
+  clearConversationHistory,
   sendConversationMessage,
   updateMessage,
   type Conversation,
@@ -215,6 +216,15 @@ function App() {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
+
+  /*
+   * 7B-5 per-user chat history controls.
+   */
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [clearChatConfirmOpen, setClearChatConfirmOpen] =
+    useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
+  const [clearChatError, setClearChatError] = useState("");
 
   /*
    * 5D-1 notification indicator state.
@@ -2005,6 +2015,86 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    function handleDocumentPointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+
+      if (!target?.closest(".chat-header-actions")) {
+        setChatMenuOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "pointerdown",
+      handleDocumentPointerDown,
+    );
+
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        handleDocumentPointerDown,
+      );
+    };
+  }, []);
+
+  function openClearChatConfirmation() {
+    setChatMenuOpen(false);
+    setClearChatError("");
+    setClearChatConfirmOpen(true);
+  }
+
+  function cancelClearChat() {
+    if (clearingChat) {
+      return;
+    }
+
+    setClearChatConfirmOpen(false);
+    setClearChatError("");
+  }
+
+  async function handleClearChat() {
+    const conversationId = selectedConversationId;
+
+    if (!conversationId || clearingChat) {
+      return;
+    }
+
+    setClearingChat(true);
+    setClearChatError("");
+
+    try {
+      await clearConversationHistory(conversationId);
+
+      setMessages([]);
+      setNextCursor(null);
+      setMessageStatuses({});
+      readMessageIdsRef.current.clear();
+      setOpenMessageActionId(null);
+      setEditingMessageId(null);
+      setEditingMessageContent("");
+      setMessageUpdateError("");
+      setReplyingToMessage(null);
+      setMessageInput("");
+      setSendMessageError(false);
+      setUnreadCounts((currentCounts) => {
+        if (!(conversationId in currentCounts)) {
+          return currentCounts;
+        }
+
+        const nextCounts = { ...currentCounts };
+        delete nextCounts[conversationId];
+        return nextCounts;
+      });
+      setClearChatConfirmOpen(false);
+    } catch {
+      setClearChatError(
+        "Unable to clear chat. Please try again.",
+      );
+    } finally {
+      setClearingChat(false);
+    }
+  }
+
   function getOtherMember(
     conversation: Conversation,
   ) {
@@ -3576,6 +3666,162 @@ function App() {
           background: rgba(255, 255, 255, 0.92);
         }
 
+        .chat-header-actions {
+          position: relative;
+          flex: 0 0 auto;
+          margin-left: auto;
+        }
+
+        .chat-header-menu-button {
+          width: 42px;
+          height: 42px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border: 1px solid var(--cb-border);
+          border-radius: 50%;
+          background: #ffffff;
+          color: var(--cb-text);
+          cursor: pointer;
+          box-shadow: 0 2px 8px rgba(24, 39, 58, 0.06);
+          transition: background 140ms ease, border-color 140ms ease;
+        }
+
+        .chat-header-menu-button:hover {
+          background: #f5f6f8;
+          border-color: var(--cb-border-strong);
+        }
+
+        .chat-header-menu-button:focus-visible {
+          outline: 2px solid rgba(47, 114, 232, 0.28);
+          outline-offset: 2px;
+        }
+
+        .chat-header-menu-button span {
+          display: block;
+          transform: translateY(-2px);
+          font-size: 16px;
+          font-weight: 800;
+          letter-spacing: 2px;
+          line-height: 1;
+        }
+
+        .chat-header-menu {
+          position: absolute;
+          z-index: 30;
+          top: calc(100% + 8px);
+          right: 0;
+          min-width: 150px;
+          padding: 5px;
+          border: 1px solid var(--cb-border-strong);
+          border-radius: 11px;
+          background: #ffffff;
+          box-shadow: 0 12px 28px rgba(24, 39, 58, 0.14);
+        }
+
+        .chat-header-menu button {
+          width: 100%;
+          display: block;
+          padding: 10px 11px;
+          border: 0;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--cb-text);
+          text-align: left;
+          font: inherit;
+          font-size: 13px;
+          cursor: pointer;
+        }
+
+        .chat-header-menu button:hover {
+          background: #f1f3f6;
+        }
+
+        .chat-header-menu button:focus-visible {
+          outline: 2px solid rgba(47, 114, 232, 0.28);
+          outline-offset: -2px;
+        }
+
+        .clear-chat-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(17, 24, 39, 0.34);
+        }
+
+        .clear-chat-dialog {
+          width: min(420px, 100%);
+          padding: 24px;
+          border: 1px solid var(--cb-border);
+          border-radius: 16px;
+          background: #ffffff;
+          box-shadow: 0 22px 60px rgba(24, 39, 58, 0.22);
+        }
+
+        .clear-chat-dialog h2 {
+          margin: 0;
+          color: var(--cb-text);
+          font-size: 20px;
+          line-height: 1.25;
+        }
+
+        .clear-chat-dialog p {
+          margin: 10px 0 0;
+          color: var(--cb-text-muted);
+          font-size: 13px;
+          line-height: 1.55;
+        }
+
+        .clear-chat-error {
+          margin-top: 14px;
+          padding: 9px 11px;
+          border: 1px solid #d7b8b8;
+          border-radius: 9px;
+          background: #f7eeee;
+          color: var(--cb-danger);
+          font-size: 12px;
+          line-height: 1.4;
+        }
+
+        .clear-chat-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 9px;
+          margin-top: 20px;
+        }
+
+        .clear-chat-actions button {
+          min-height: 38px;
+          padding: 8px 14px;
+          border-radius: 9px;
+          font: inherit;
+          font-size: 13px;
+          font-weight: 650;
+          cursor: pointer;
+        }
+
+        .clear-chat-actions button:disabled {
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+
+        .clear-chat-cancel {
+          border: 1px solid var(--cb-border-strong);
+          background: #ffffff;
+          color: var(--cb-text);
+        }
+
+        .clear-chat-confirm {
+          border: 1px solid var(--cb-danger);
+          background: var(--cb-danger);
+          color: #ffffff;
+        }
+
         .chat-header-avatar {
           width: 48px;
           height: 48px;
@@ -4625,6 +4871,23 @@ function App() {
             gap: 4px;
           }
 
+          .chat-header-actions {
+            margin-left: auto;
+          }
+
+          .chat-header-menu-button {
+            width: 38px;
+            height: 38px;
+          }
+
+          .chat-header-menu {
+            right: 0;
+          }
+
+          .clear-chat-dialog {
+            padding: 20px;
+          }
+
           .mobile-back-button {
             display: inline-flex;
             align-items: center;
@@ -5451,7 +5714,10 @@ function App() {
                 <button
                   type="button"
                   className="mobile-back-button"
-                  onClick={() => setSelectedConversationId(null)}
+                  onClick={() => {
+                    setChatMenuOpen(false);
+                    setSelectedConversationId(null);
+                  }}
                   aria-label="Back to conversations"
                 >
                   ←
@@ -5494,6 +5760,37 @@ function App() {
                   </h2>
 
                   <small>@{selectedOtherMember.user.username}</small>
+                </div>
+
+                <div className="chat-header-actions">
+                  <button
+                    type="button"
+                    className="chat-header-menu-button"
+                    aria-label="Chat options"
+                    aria-haspopup="menu"
+                    aria-expanded={chatMenuOpen}
+                    onClick={() => {
+                      setClearChatError("");
+                      setChatMenuOpen((isOpen) => !isOpen);
+                    }}
+                  >
+                    <span aria-hidden="true">•••</span>
+                  </button>
+
+                  {chatMenuOpen && (
+                    <div
+                      className="chat-header-menu"
+                      role="menu"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={openClearChatConfirmation}
+                      >
+                        Clear chat
+                      </button>
+                    </div>
+                  )}
                 </div>
               </header>
 
@@ -5952,6 +6249,54 @@ function App() {
           )}
         </section>
       </main>
+
+      {clearChatConfirmOpen && (
+        <div
+          className="clear-chat-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-chat-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              cancelClearChat();
+            }
+          }}
+        >
+          <div className="clear-chat-dialog">
+            <h2 id="clear-chat-title">Clear chat?</h2>
+            <p>
+              This will clear this conversation from your
+              chat history. The other person will keep their
+              own chat history.
+            </p>
+
+            {clearChatError && (
+              <div className="clear-chat-error" role="alert">
+                {clearChatError}
+              </div>
+            )}
+
+            <div className="clear-chat-actions">
+              <button
+                type="button"
+                className="clear-chat-cancel"
+                onClick={cancelClearChat}
+                disabled={clearingChat}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="clear-chat-confirm"
+                onClick={handleClearChat}
+                disabled={clearingChat}
+              >
+                {clearingChat ? "Clearing..." : "Clear chat"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {newChatOpen && (
         <div

@@ -184,6 +184,22 @@ export interface CreateMessageResponse {
   message: Message;
 }
 
+export async function clearConversationHistory(
+  conversationId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/conversations/${conversationId}/messages`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Unable to clear chat");
+  }
+}
+
 export async function sendConversationMessage(
   conversationId: string,
   content: string,
