@@ -40,13 +40,16 @@ model ConversationMember {
   conversationId String
   userId         String
   joinedAt       DateTime  @default(now())
-  clearedAt      DateTime?
+  clearedAt         DateTime?
+  lastReadMessageId String?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage Message? @relation("ConversationMemberLastReadMessage", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, userId])
   @@index([userId])
+  @@index([lastReadMessageId])
 }
 
 model Message {
@@ -63,6 +66,7 @@ model Message {
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
   replyToMessage Message? @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies      Message[] @relation("MessageReplies")
+  lastReadByMembers ConversationMember[] @relation("ConversationMemberLastReadMessage")
 
   @@index([conversationId, createdAt])
   @@index([senderId])

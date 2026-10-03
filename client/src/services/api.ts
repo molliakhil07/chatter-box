@@ -112,16 +112,19 @@ export interface RepliedMessage {
 interface MessagesResponse {
   items: Message[];
   nextCursor: string | null;
+  readMessageIds: string[];
 }
 
 interface MessagesApiResponse {
   items?: Message[];
   nextCursor?: string | null;
+  readMessageIds?: string[];
   messages?:
     | Message[]
     | {
         items?: Message[];
         nextCursor?: string | null;
+        readMessageIds?: string[];
       };
 }
 
@@ -170,6 +173,7 @@ export async function getConversationMessages(
     return {
       items: messagePayload,
       nextCursor: null,
+      readMessageIds: [],
     };
   }
 
@@ -177,11 +181,9 @@ export async function getConversationMessages(
     items: messagePayload.items ?? [],
     nextCursor:
       messagePayload.nextCursor ?? null,
+    readMessageIds:
+      messagePayload.readMessageIds ?? [],
   };
-}
-
-export interface CreateMessageResponse {
-  message: Message;
 }
 
 export async function clearConversationHistory(
@@ -196,8 +198,12 @@ export async function clearConversationHistory(
   );
 
   if (!response.ok) {
-    throw new Error("Unable to clear chat");
+    throw new Error("Unable to clear conversation history");
   }
+}
+
+export interface CreateMessageResponse {
+  message: Message;
 }
 
 export async function sendConversationMessage(

@@ -250,21 +250,20 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const conversation = await prisma.conversation.findFirst({
+      const membership = await prisma.conversationMember.findUnique({
         where: {
-          id: conversationId,
-          members: {
-            some: {
-              userId,
-            },
+          conversationId_userId: {
+            conversationId,
+            userId,
           },
         },
         select: {
           id: true,
+          lastReadMessageId: true,
         },
       });
 
-      if (!conversation) {
+      if (!membership) {
         callback?.({
           ok: false,
           error: "Conversation not found",
@@ -280,6 +279,7 @@ io.on("connection", (socket) => {
         select: {
           id: true,
           senderId: true,
+          createdAt: true,
         },
       });
 
@@ -291,8 +291,46 @@ io.on("connection", (socket) => {
         return;
       }
 
-      /* Only the original sender should receive the read status. */
+      /*
+       * Only the original sender should receive the read status.
+       * Persist the recipient's latest read message so the sender
+       * can reconstruct read state after a refresh.
+       */
       if (message.senderId !== userId) {
+        let shouldAdvanceReadPointer = true;
+
+        if (membership.lastReadMessageId) {
+          const currentLastReadMessage =
+            await prisma.message.findFirst({
+              where: {
+                id: membership.lastReadMessageId,
+                conversationId,
+              },
+              select: {
+                createdAt: true,
+              },
+            });
+
+          if (
+            currentLastReadMessage &&
+            currentLastReadMessage.createdAt >=
+              message.createdAt
+          ) {
+            shouldAdvanceReadPointer = false;
+          }
+        }
+
+        if (shouldAdvanceReadPointer) {
+          await prisma.conversationMember.update({
+            where: {
+              id: membership.id,
+            },
+            data: {
+              lastReadMessageId: message.id,
+            },
+          });
+        }
+
         emitToUser(message.senderId, "message_status", {
           messageId: message.id,
           status: "read",

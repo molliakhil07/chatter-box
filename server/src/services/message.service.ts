@@ -107,6 +107,7 @@ export async function getConversationMessages(
     select: {
       id: true,
       clearedAt: true,
+      lastReadMessageId: true,
     },
   });
 
@@ -140,7 +141,50 @@ export async function getConversationMessages(
     select: messageSelect,
   });
 
-  return messages;
+  const otherMember = await prisma.conversationMember.findFirst({
+    where: {
+      conversationId,
+      userId: {
+        not: userId,
+      },
+    },
+    select: {
+      lastReadMessageId: true,
+    },
+  });
+
+  let lastReadMessageCreatedAt: Date | null = null;
+
+  if (otherMember?.lastReadMessageId) {
+    const lastReadMessage = await prisma.message.findFirst({
+      where: {
+        id: otherMember.lastReadMessageId,
+        conversationId,
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    lastReadMessageCreatedAt =
+      lastReadMessage?.createdAt ?? null;
+  }
+
+  const readMessageIds = lastReadMessageCreatedAt
+    ? messages
+        .filter(
+          (message) =>
+            message.senderId === userId &&
+            message.createdAt.getTime() <=
+              lastReadMessageCreatedAt!.getTime(),
+        )
+        .map((message) => message.id)
+    : [];
+
+  return {
+    items: messages,
+    readMessageIds,
+  };
 }
 
 export async function clearConversationHistory(

@@ -999,11 +999,19 @@ function App() {
         );
 
         /*
-         * Existing own messages have at
-         * least been persisted successfully.
-         * Until a realtime delivery event is
-         * observed, keep them at sent.
+         * Restore persisted read state from the
+         * recipient's conversation-member read pointer.
+         *
+         * Messages that have been read remain read after
+         * refresh. Messages without a persisted read state
+         * keep the existing sent state until delivery/read
+         * realtime events are observed.
          */
+        const persistedReadMessageIds =
+          new Set(
+            response.readMessageIds ?? [],
+          );
+
         const initialStatuses: Record<
           string,
           MessageStatus
@@ -1018,7 +1026,11 @@ function App() {
           ) {
             initialStatuses[
               message.id
-            ] = "sent";
+            ] = persistedReadMessageIds.has(
+              message.id,
+            )
+              ? "read"
+              : "sent";
           }
         }
 
@@ -1177,10 +1189,15 @@ function App() {
       );
 
       /*
-       * Add status entries for older own
-       * messages without replacing statuses
-       * already known for newer messages.
+       * Restore persisted read state for older own
+       * messages without replacing statuses already
+       * known for newer messages.
        */
+      const persistedReadMessageIds =
+        new Set(
+          response.readMessageIds ?? [],
+        );
+
       setMessageStatuses(
         (currentStatuses) => {
           const updatedStatuses = {
@@ -1191,16 +1208,22 @@ function App() {
             const message of olderMessages
           ) {
             if (
-              message.senderId ===
-              user?.id &&
-              !updatedStatuses[
+              message.senderId !==
+              user?.id ||
+              updatedStatuses[
                 message.id
               ]
             ) {
-              updatedStatuses[
-                message.id
-              ] = "sent";
+              continue;
             }
+
+            updatedStatuses[
+              message.id
+            ] = persistedReadMessageIds.has(
+              message.id,
+            )
+              ? "read"
+              : "sent";
           }
 
           return updatedStatuses;
