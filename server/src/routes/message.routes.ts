@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.middleware";
 import {
+  clear,
   create,
   list,
   update,
@@ -18,6 +19,12 @@ router.get(
   "/conversations/:conversationId/messages",
   requireAuth,
   list,
+);
+
+router.delete(
+  "/conversations/:conversationId/messages",
+  requireAuth,
+  clear,
 );
 
 router.patch(
