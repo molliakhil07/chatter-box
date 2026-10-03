@@ -143,6 +143,42 @@ export async function getConversationMessages(
   return messages;
 }
 
+export async function clearConversationHistory(
+  conversationId: string,
+  userId: string,
+) {
+  const membership = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId,
+        userId,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!membership) {
+    return {
+      status: "conversation_not_found" as const,
+    };
+  }
+
+  await prisma.conversationMember.update({
+    where: {
+      id: membership.id,
+    },
+    data: {
+      clearedAt: new Date(),
+    },
+  });
+
+  return {
+    status: "cleared" as const,
+  };
+}
+
 export async function updateMessage(
   messageId: string,
   userId: string,

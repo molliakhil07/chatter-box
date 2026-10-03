@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import {
+  clearConversationHistory,
   createMessage,
   getConversationMessages,
   updateMessage,
@@ -14,7 +15,7 @@ export async function create(
   try {
     const userId = req.userId;
     const { conversationId } = req.params;
-    const { content } = req.body;
+    const { content, replyToMessageId } = req.body;
 
     if (!userId) {
       res.status(401).json({
@@ -40,18 +41,30 @@ export async function create(
       return;
     }
 
-    const message = await createMessage(
+    const result = await createMessage(
       conversationId,
       userId,
       content.trim(),
+      typeof replyToMessageId === "string"
+        ? replyToMessageId
+        : undefined,
     );
 
-    if (!message) {
+    if (result.status === "conversation_not_found") {
       res.status(404).json({
         error: "Conversation not found",
       });
       return;
     }
+
+    if (result.status === "invalid_reply") {
+      res.status(400).json({
+        error: "Reply target message not found",
+      });
+      return;
+    }
+
+    const message = result.message;
 
     const conversationMembers =
       await prisma.conversationMember.findMany({
@@ -157,6 +170,54 @@ export async function list(
     console.error("Message retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve messages",
+    });
+  }
+}
+
+export async function clear(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const userId = req.userId;
+    const { conversationId } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    if (
+      typeof conversationId !== "string" ||
+      conversationId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "conversationId is required",
+      });
+      return;
+    }
+
+    const result = await clearConversationHistory(
+      conversationId,
+      userId,
+    );
+
+    if (result.status === "conversation_not_found") {
+      res.status(404).json({
+        error: "Conversation not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "cleared",
+    });
+  } catch (error) {
+    console.error("Conversation history clear failed:", error);
+    res.status(500).json({
+      error: "Unable to clear chat",
     });
   }
 }
