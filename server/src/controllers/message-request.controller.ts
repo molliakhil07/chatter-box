@@ -1,3 +1,4 @@
+import { logError } from "../logger";
 import type { Request, Response } from "express";
 
 import { emitToUser } from "../socket";
@@ -80,10 +81,7 @@ res.status(201).json({
   request: result.request,
 });
   } catch (error) {
-    console.error(
-      "Message request creation failed:",
-      error,
-    );
+    logError("Message request creation failed:", error);
 
     res.status(500).json({
       error: "Unable to send message request",
@@ -112,10 +110,7 @@ export async function listIncoming(
       requests,
     });
   } catch (error) {
-    console.error(
-      "Incoming message request retrieval failed:",
-      error,
-    );
+    logError("Incoming message request retrieval failed:", error);
 
     res.status(500).json({
       error: "Unable to retrieve incoming message requests",
@@ -203,10 +198,7 @@ export async function accept(
       conversation: result.conversation,
     });
   } catch (error) {
-    console.error(
-      "Message request acceptance failed:",
-      error,
-    );
+    logError("Message request acceptance failed:", error);
 
     res.status(500).json({
       error: "Unable to accept message request",
@@ -236,10 +228,7 @@ export async function accepted(
       notification,
     });
   } catch (error) {
-    console.error(
-      "Accepted message request retrieval failed:",
-      error,
-    );
+    logError("Accepted message request retrieval failed:", error);
 
     res.status(500).json({
       error: "Unable to retrieve accepted message request",
@@ -303,10 +292,7 @@ export async function acceptedSeen(
       ok: true,
     });
   } catch (error) {
-    console.error(
-      "Accepted message request acknowledgement failed:",
-      error,
-    );
+    logError("Accepted message request acknowledgement failed:", error);
 
     res.status(500).json({
       error: "Unable to acknowledge accepted message request",
@@ -379,10 +365,7 @@ export async function reject(
       request: result.request,
     });
   } catch (error) {
-    console.error(
-      "Message request rejection failed:",
-      error,
-    );
+    logError("Message request rejection failed:", error);
 
     res.status(500).json({
       error: "Unable to reject message request",

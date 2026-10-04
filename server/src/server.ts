@@ -12,6 +12,9 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { validateSession } from "./services/session.service";
 import { setSocketIO, emitToUser } from "./socket";
+import { securityHeaders } from "./middleware/security-headers.middleware";
+import { errorHandler } from "./middleware/error-handler.middleware";
+import { logError } from "./logger";
 
 dotenv.config();
 
@@ -32,6 +35,9 @@ const corsOrigin =
     ? configuredCorsOrigins[0]
     : configuredCorsOrigins;
 
+app.disable("x-powered-by");
+app.use(securityHeaders);
+
 app.use(
   cors({
     origin: corsOrigin,
@@ -39,7 +45,9 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({
+  limit: "32kb",
+}));
 app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
@@ -64,7 +72,7 @@ app.get("/api/health/db", async (_req, res) => {
       database: "connected",
     });
   } catch (error) {
-    console.error("Database health check failed:", error);
+    logError("Database health check failed", error);
 
     res.status(500).json({
       status: "error",
@@ -113,7 +121,7 @@ io.use(async (socket, next) => {
     socket.data.userId = userId;
     next();
   } catch (error) {
-    console.error("Socket authentication failed:", error);
+    logError("Socket authentication failed", error);
     next(new Error("Authentication failed"));
   }
 });
@@ -197,7 +205,7 @@ io.on("connection", (socket) => {
         conversationId,
       });
     } catch (error) {
-      console.error("Conversation join failed:", error);
+      logError("Conversation join failed", error);
 
       callback?.({
         ok: false,
@@ -250,20 +258,21 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const membership = await prisma.conversationMember.findUnique({
+      const conversation = await prisma.conversation.findFirst({
         where: {
-          conversationId_userId: {
-            conversationId,
-            userId,
+          id: conversationId,
+          members: {
+            some: {
+              userId,
+            },
           },
         },
         select: {
           id: true,
-          lastReadMessageId: true,
         },
       });
 
-      if (!membership) {
+      if (!conversation) {
         callback?.({
           ok: false,
           error: "Conversation not found",
@@ -279,7 +288,6 @@ io.on("connection", (socket) => {
         select: {
           id: true,
           senderId: true,
-          createdAt: true,
         },
       });
 
@@ -291,46 +299,8 @@ io.on("connection", (socket) => {
         return;
       }
 
-      /*
-       * Only the original sender should receive the read status.
-       * Persist the recipient's latest read message so the sender
-       * can reconstruct read state after a refresh.
-       */
+      /* Only the original sender should receive the read status. */
       if (message.senderId !== userId) {
-        let shouldAdvanceReadPointer = true;
-
-        if (membership.lastReadMessageId) {
-          const currentLastReadMessage =
-            await prisma.message.findFirst({
-              where: {
-                id: membership.lastReadMessageId,
-                conversationId,
-              },
-              select: {
-                createdAt: true,
-              },
-            });
-
-          if (
-            currentLastReadMessage &&
-            currentLastReadMessage.createdAt >=
-              message.createdAt
-          ) {
-            shouldAdvanceReadPointer = false;
-          }
-        }
-
-        if (shouldAdvanceReadPointer) {
-          await prisma.conversationMember.update({
-            where: {
-              id: membership.id,
-            },
-            data: {
-              lastReadMessageId: message.id,
-            },
-          });
-        }
-
         emitToUser(message.senderId, "message_status", {
           messageId: message.id,
           status: "read",
@@ -342,7 +312,7 @@ io.on("connection", (socket) => {
         messageId,
       });
     } catch (error) {
-      console.error("Message read failed:", error);
+      logError("Message read failed", error);
 
       callback?.({
         ok: false,
@@ -355,6 +325,8 @@ io.on("connection", (socket) => {
     // No presence/typing state is maintained by the server.
   });
 });
+
+app.use(errorHandler);
 
 httpServer.listen(PORT, HOST, () => {
   console.log(

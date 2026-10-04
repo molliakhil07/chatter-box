@@ -1,3 +1,4 @@
+import { logError } from "../logger";
 import type { Request, Response } from "express";
 
 import { searchUsers } from "../services/user.service";
@@ -40,7 +41,7 @@ export async function getUsers(
       users,
     });
   } catch (error) {
-    console.error("User search failed:", error);
+    logError("User search failed:", error);
 
     res.status(500).json({
       error: "Unable to search users",

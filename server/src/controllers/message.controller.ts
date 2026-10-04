@@ -1,8 +1,8 @@
+import { logError } from "../logger";
 import type { Request, Response } from "express";
 import {
   clearConversationHistory,
   createMessage,
-  MAX_MESSAGE_LENGTH,
   getConversationMessages,
   updateMessage,
 } from "../services/message.service";
@@ -35,21 +35,9 @@ export async function create(
       return;
     }
 
-    const normalizedContent =
-      typeof content === "string"
-        ? content.trim()
-        : "";
-
-    if (!normalizedContent) {
+    if (typeof content !== "string" || content.trim().length === 0) {
       res.status(400).json({
         error: "Message content is required",
-      });
-      return;
-    }
-
-    if (normalizedContent.length > MAX_MESSAGE_LENGTH) {
-      res.status(400).json({
-        error: `Message content must not exceed ${MAX_MESSAGE_LENGTH} characters`,
       });
       return;
     }
@@ -57,7 +45,7 @@ export async function create(
     const result = await createMessage(
       conversationId,
       userId,
-      normalizedContent,
+      content.trim(),
       typeof replyToMessageId === "string"
         ? replyToMessageId
         : undefined,
@@ -73,13 +61,6 @@ export async function create(
     if (result.status === "invalid_reply") {
       res.status(400).json({
         error: "Reply target message not found",
-      });
-      return;
-    }
-
-    if (result.status === "invalid_content") {
-      res.status(400).json({
-        error: `Message content must be between 1 and ${MAX_MESSAGE_LENGTH} characters`,
       });
       return;
     }
@@ -129,7 +110,7 @@ export async function create(
 
     res.status(201).json({ message });
   } catch (error) {
-    console.error("Message creation failed:", error);
+    logError("Message creation failed:", error);
     res.status(500).json({
       error: "Unable to create message",
     });
@@ -187,7 +168,7 @@ export async function list(
 
     res.status(200).json({ messages });
   } catch (error) {
-    console.error("Message retrieval failed:", error);
+    logError("Message retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve messages",
     });
@@ -235,7 +216,7 @@ export async function clear(
       status: "cleared",
     });
   } catch (error) {
-    console.error("Conversation history clear failed:", error);
+    logError("Conversation history clear failed:", error);
     res.status(500).json({
       error: "Unable to clear chat",
     });
@@ -275,24 +256,12 @@ export async function update(
       return;
     }
 
-    const normalizedContent =
-      typeof content === "string"
-        ? content.trim()
-        : "";
-
-    if (action === "edit" && !normalizedContent) {
-      res.status(400).json({
-        error: "Message content is required for editing",
-      });
-      return;
-    }
-
     if (
       action === "edit" &&
-      normalizedContent.length > MAX_MESSAGE_LENGTH
+      (typeof content !== "string" || content.trim().length === 0)
     ) {
       res.status(400).json({
-        error: `Message content must not exceed ${MAX_MESSAGE_LENGTH} characters`,
+        error: "Message content is required for editing",
       });
       return;
     }
@@ -301,7 +270,7 @@ export async function update(
       messageId,
       userId,
       action,
-      normalizedContent,
+      content,
     );
 
     if (result.status === "not_found") {
@@ -336,7 +305,7 @@ export async function update(
       message: result.message,
     });
   } catch (error) {
-    console.error("Message update failed:", error);
+    logError("Message update failed:", error);
     res.status(500).json({
       error: "Unable to update message",
     });
