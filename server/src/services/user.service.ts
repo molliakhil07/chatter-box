@@ -7,7 +7,24 @@ type RegisterUserInput = {
   email: string;
   password: string;
   displayName?: string;
+  gender: "MALE" | "FEMALE";
 };
+
+type UpdateProfileInput = {
+  displayName?: string | null;
+  bio?: string | null;
+};
+
+const MAX_DISPLAY_NAME_LENGTH = 100;
+const MAX_BIO_LENGTH = 500;
+
+function getDefaultAvatarUrl(
+  gender: "MALE" | "FEMALE",
+): string {
+  return gender === "MALE"
+    ? "/avatars/male.svg"
+    : "/avatars/female.svg";
+}
 
 export async function registerUser(
   input: RegisterUserInput,
@@ -34,6 +51,18 @@ export async function registerUser(
     );
   }
 
+  const normalizedDisplayName =
+    input.displayName?.trim() || null;
+
+  if (
+    normalizedDisplayName &&
+    normalizedDisplayName.length > MAX_DISPLAY_NAME_LENGTH
+  ) {
+    throw new Error(
+      "Display name must be 100 characters or fewer",
+    );
+  }
+
   const passwordHash = await argon2.hash(
     input.password,
     {
@@ -41,13 +70,16 @@ export async function registerUser(
     },
   );
 
+  const avatarUrl = getDefaultAvatarUrl(input.gender);
+
   return prisma.user.create({
     data: {
       username: input.username,
       email: input.email,
       passwordHash,
-      displayName:
-        input.displayName?.trim() || null,
+      displayName: normalizedDisplayName,
+      avatarUrl,
+      gender: input.gender,
     },
     select: {
       id: true,
@@ -55,7 +87,92 @@ export async function registerUser(
       email: true,
       displayName: true,
       avatarUrl: true,
+      gender: true,
+      bio: true,
       createdAt: true,
+    },
+  });
+}
+
+export async function updateUserProfile(
+  userId: string,
+  input: UpdateProfileInput,
+) {
+  const data: {
+    displayName?: string | null;
+    bio?: string | null;
+  } = {};
+
+  if ("displayName" in input) {
+    const normalizedDisplayName =
+      typeof input.displayName === "string"
+        ? input.displayName.trim()
+        : "";
+
+    if (
+      normalizedDisplayName.length >
+      MAX_DISPLAY_NAME_LENGTH
+    ) {
+      throw new Error(
+        "Display name must be 100 characters or fewer",
+      );
+    }
+
+    data.displayName =
+      normalizedDisplayName.length > 0
+        ? normalizedDisplayName
+        : null;
+  }
+
+  if ("bio" in input) {
+    const normalizedBio =
+      typeof input.bio === "string"
+        ? input.bio.trim()
+        : "";
+
+    if (normalizedBio.length > MAX_BIO_LENGTH) {
+      throw new Error(
+        "Bio must be 500 characters or fewer",
+      );
+    }
+
+    data.bio =
+      normalizedBio.length > 0
+        ? normalizedBio
+        : null;
+  }
+
+  return prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data,
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      displayName: true,
+      avatarUrl: true,
+      gender: true,
+      bio: true,
+      createdAt: true,
+    },
+  });
+}
+
+export async function getUserProfile(
+  userId: string,
+) {
+  return prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarUrl: true,
+      bio: true,
     },
   });
 }

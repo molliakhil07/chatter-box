@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 
-import { searchUsers } from "../services/user.service";
+import {
+  getUserProfile as getUserProfileById,
+  searchUsers,
+} from "../services/user.service";
 
 export async function getUsers(
   req: Request,
@@ -44,6 +47,56 @@ export async function getUsers(
 
     res.status(500).json({
       error: "Unable to search users",
+    });
+  }
+}
+
+export async function getUserProfile(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const currentUserId = req.userId;
+
+    if (!currentUserId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    const userId = req.params.userId;
+
+    if (
+      typeof userId !== "string" ||
+      userId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "User ID is required",
+      });
+      return;
+    }
+
+    const user = await getUserProfileById(userId);
+
+    if (!user) {
+      res.status(404).json({
+        error: "User not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      user,
+    });
+  } catch (error) {
+    console.error(
+      "User profile lookup failed:",
+      error,
+    );
+
+    res.status(500).json({
+      error: "Unable to load user profile",
     });
   }
 }

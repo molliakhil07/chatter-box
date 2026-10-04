@@ -20,7 +20,17 @@ export interface CurrentUser {
   email: string;
   displayName: string | null;
   avatarUrl: string | null;
+  gender: "MALE" | "FEMALE";
+  bio: string | null;
   createdAt: string;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
 }
 
 interface CurrentUserResponse {
@@ -37,6 +47,88 @@ export async function getCurrentUser(): Promise<CurrentUserResponse> {
   }
 
   return response.json();
+}
+
+export async function registerAccount(input: {
+  username: string;
+  email: string;
+  password: string;
+  displayName: string;
+  gender: "MALE" | "FEMALE";
+}): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/register`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to create account",
+    );
+  }
+}
+
+export async function updateCurrentUserProfile(input: {
+  displayName?: string | null;
+  bio?: string | null;
+}): Promise<CurrentUser> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/me`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to update profile",
+    );
+  }
+
+  return body.user as CurrentUser;
+}
+
+export async function getUserProfile(
+  userId: string,
+): Promise<PublicUserProfile> {
+  const response = await fetch(
+    `${API_BASE_URL}/users/${encodeURIComponent(userId)}/profile`,
+    {
+      credentials: "include",
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to load user profile",
+    );
+  }
+
+  return body.user as PublicUserProfile;
 }
 
 /* ---------------- CONVERSATIONS ---------------- */

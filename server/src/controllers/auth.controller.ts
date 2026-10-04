@@ -13,7 +13,13 @@ export async function register(
   res: Response,
 ): Promise<void> {
   try {
-    const { username, email, password, displayName } = req.body;
+    const {
+      username,
+      email,
+      password,
+      displayName,
+      gender,
+    } = req.body;
 
     if (
       typeof username !== "string" ||
@@ -24,21 +30,35 @@ export async function register(
       password.length === 0
     ) {
       res.status(400).json({
-        error: "username, email, and password are required",
+        error:
+          "username, email, and password are required",
+      });
+      return;
+    }
+
+    if (
+      gender !== "MALE" &&
+      gender !== "FEMALE"
+    ) {
+      res.status(400).json({
+        error: "Gender must be MALE or FEMALE",
       });
       return;
     }
 
     if (password.length < 8) {
       res.status(400).json({
-        error: "Password must be at least 8 characters long",
+        error:
+          "Password must be at least 8 characters long",
       });
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail =
+      email.trim().toLowerCase();
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailPattern.test(normalizedEmail)) {
       res.status(400).json({
@@ -47,9 +67,11 @@ export async function register(
       return;
     }
 
-    const normalizedUsername = username.trim();
+    const normalizedUsername =
+      username.trim();
 
-    const usernamePattern = /^[a-zA-Z0-9_]{3,30}$/;
+    const usernamePattern =
+      /^[a-zA-Z0-9_]{3,30}$/;
 
     if (!usernamePattern.test(normalizedUsername)) {
       res.status(400).json({
@@ -59,12 +81,26 @@ export async function register(
       return;
     }
 
+    if (
+      typeof displayName === "string" &&
+      displayName.trim().length > 100
+    ) {
+      res.status(400).json({
+        error:
+          "Display name must be 100 characters or fewer",
+      });
+      return;
+    }
+
     const user = await registerUser({
       username: normalizedUsername,
       email: normalizedEmail,
       password,
       displayName:
-        typeof displayName === "string" ? displayName : undefined,
+        typeof displayName === "string"
+          ? displayName
+          : undefined,
+      gender,
     });
 
     res.status(201).json({
@@ -73,9 +109,21 @@ export async function register(
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message === "Username or email is already registered"
+      error.message ===
+        "Username or email is already registered"
     ) {
       res.status(409).json({
+        error: error.message,
+      });
+      return;
+    }
+
+    if (
+      error instanceof Error &&
+      error.message ===
+        "Display name must be 100 characters or fewer"
+    ) {
+      res.status(400).json({
         error: error.message,
       });
       return;
@@ -108,7 +156,10 @@ export async function login(
       return;
     }
 
-    const user = await authenticateUser(identity, password);
+    const user = await authenticateUser(
+      identity,
+      password,
+    );
 
     if (!user) {
       res.status(401).json({
@@ -119,13 +170,15 @@ export async function login(
 
     const session = await createSession(user.id);
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction =
+      process.env.NODE_ENV === "production";
 
     res.cookie("session_token", session.token, {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 30,
+      maxAge:
+        1000 * 60 * 60 * 24 * 30,
     });
 
     res.status(200).json({
@@ -165,7 +218,8 @@ export async function logout(
       });
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction =
+      process.env.NODE_ENV === "production";
 
     res.clearCookie("session_token", {
       httpOnly: true,

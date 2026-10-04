@@ -10,6 +10,9 @@ import {
   getConversationMessages,
   getConversations,
   getCurrentUser,
+  registerAccount,
+  updateCurrentUserProfile,
+  getUserProfile,
   clearConversationHistory,
   deleteConversation,
   sendConversationMessage,
@@ -21,7 +24,6 @@ import {
 import {
   login,
   logout,
-  register,
 } from "./services/auth";
 import {
   connectSocket,
@@ -253,6 +255,9 @@ function App() {
   const [authDisplayName, setAuthDisplayName] =
     useState("");
 
+  const [authGender, setAuthGender] =
+    useState<"" | "MALE" | "FEMALE">("");
+
   const [authPassword, setAuthPassword] =
     useState("");
 
@@ -270,6 +275,28 @@ function App() {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
+
+  const [profileEditing, setProfileEditing] =
+    useState(false);
+  const [profileDisplayName, setProfileDisplayName] =
+    useState("");
+  const [profileBio, setProfileBio] =
+    useState("");
+  const [profileSaving, setProfileSaving] =
+    useState(false);
+  const [profileError, setProfileError] =
+    useState("");
+
+  const [viewedUserProfileOpen, setViewedUserProfileOpen] =
+    useState(false);
+  const [viewedUserProfile, setViewedUserProfile] =
+    useState<import("./services/api").PublicUserProfile | null>(
+      null,
+    );
+  const [viewedUserProfileLoading, setViewedUserProfileLoading] =
+    useState(false);
+  const [viewedUserProfileError, setViewedUserProfileError] =
+    useState("");
 
   /*
    * 7B-5 per-user chat history controls.
@@ -1583,6 +1610,60 @@ function App() {
     }
   }
 
+  async function handleSaveProfile() {
+    if (profileSaving) {
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError("");
+
+    try {
+      const updatedUser =
+        await updateCurrentUserProfile({
+          displayName: profileDisplayName,
+          bio: profileBio,
+        });
+
+      setUser(updatedUser);
+      setProfileDisplayName(
+        updatedUser.displayName ?? "",
+      );
+      setProfileBio(updatedUser.bio ?? "");
+      setProfileEditing(false);
+    } catch (error) {
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update profile",
+      );
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function openUserProfile(userId: string) {
+    setViewedUserProfileLoading(true);
+    setViewedUserProfileError("");
+    setViewedUserProfile(null);
+    setViewedUserProfileOpen(true);
+
+    try {
+      const profile =
+        await getUserProfile(userId);
+
+      setViewedUserProfile(profile);
+    } catch (error) {
+      setViewedUserProfileError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load user profile",
+      );
+    } finally {
+      setViewedUserProfileLoading(false);
+    }
+  }
+
   async function handleLogout() {
     try {
       await logout();
@@ -1594,6 +1675,10 @@ function App() {
       setConversationError(false);
       setSelectedConversationId(null);
       setProfileOpen(false);
+      setProfileEditing(false);
+      setProfileError("");
+      setViewedUserProfile(null);
+      setViewedUserProfileError("");
       setMessages([]);
       setNextCursor(null);
       setMessageStatuses({});
@@ -1643,11 +1728,17 @@ function App() {
         return;
       }
 
-      await register({
+      if (!authGender) {
+        setAuthFormError("Please select your gender.");
+        return;
+      }
+
+      await registerAccount({
         email: authEmail.trim(),
         username: authUsername.trim().replace(/^@/, ""),
         password: authPassword,
         displayName: authDisplayName.trim(),
+        gender: authGender,
       });
 
       /*
@@ -2622,7 +2713,26 @@ function App() {
             text-transform: uppercase;
           }
 
-          .auth-field input {
+                  .auth-field select {
+          width: 100%;
+          box-sizing: border-box;
+          height: 56px;
+          padding: 0 17px;
+          border: 1px solid rgba(28, 43, 60, 0.11);
+          border-radius: 12px;
+          outline: none;
+          background: #ffffff;
+          color: var(--cb-auth-text);
+          font: inherit;
+          font-size: 16px;
+        }
+
+        .auth-field select:focus {
+          border-color: rgba(47, 114, 232, 0.42);
+          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.08);
+        }
+
+.auth-field input {
             width: 100%;
             height: 66px;
             padding: 0 19px;
@@ -2877,6 +2987,33 @@ function App() {
                 </div>
 
                 <div className="auth-field">
+                  <label htmlFor="auth-gender">
+                    Gender
+                  </label>
+                  <select
+                    id="auth-gender"
+                    name="gender"
+                    value={authGender}
+                    onChange={(event) => {
+                      const value =
+                        event.target.value as
+                          | ""
+                          | "MALE"
+                          | "FEMALE";
+                      setAuthGender(value);
+                      setAuthFormError("");
+                    }}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select gender
+                    </option>
+                    <option value="MALE">Male</option>
+                    <option value="FEMALE">Female</option>
+                  </select>
+                </div>
+
+                <div className="auth-field">
                   <label htmlFor="auth-register-password">
                     Password
                   </label>
@@ -2891,7 +3028,7 @@ function App() {
                     }}
                     placeholder="Create a password"
                     autoComplete="new-password"
-                    minLength={6}
+                    minLength={8}
                     required
                   />
                 </div>
@@ -2934,6 +3071,9 @@ function App() {
                   );
                   setAuthFormError("");
                   setAuthPassword("");
+                  if (isLogin) {
+                    setAuthGender("");
+                  }
                 }}
               >
                 {isLogin
@@ -2955,16 +3095,16 @@ function App() {
 
     return (
       <div className="profile-page">
-        <style>{`
-          /* Profile styles are defined in the authenticated app shell. */
-        `}</style>
-
         <header className="profile-header">
           <button
             type="button"
             className="profile-back-button"
             aria-label="Back to Chatter Box"
-            onClick={() => setProfileOpen(false)}
+            onClick={() => {
+              setProfileEditing(false);
+              setProfileError("");
+              setProfileOpen(false);
+            }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m15 18-6-6 6-6" />
@@ -2972,6 +3112,8 @@ function App() {
           </button>
 
           <h1>Profile</h1>
+
+          <div className="profile-header-spacer" />
         </header>
 
         <main className="profile-content">
@@ -2996,14 +3138,38 @@ function App() {
               </div>
             </div>
 
+            {profileError && (
+              <div
+                className="profile-error"
+                role="alert"
+              >
+                {profileError}
+              </div>
+            )}
+
             <div className="profile-details">
               <div className="profile-detail">
                 <span className="profile-detail-label">
-                  Name
+                  Display name
                 </span>
-                <span className="profile-detail-value">
-                  {profileDisplayName}
-                </span>
+
+                {profileEditing ? (
+                  <input
+                    className="profile-edit-input"
+                    value={profileDisplayName}
+                    onChange={(event) =>
+                      setProfileDisplayName(
+                        event.target.value,
+                      )
+                    }
+                    maxLength={100}
+                    aria-label="Display name"
+                  />
+                ) : (
+                  <span className="profile-detail-value">
+                    {profileDisplayName}
+                  </span>
+                )}
               </div>
 
               <div className="profile-detail">
@@ -3023,9 +3189,94 @@ function App() {
                   {user.email}
                 </span>
               </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">
+                  Gender
+                </span>
+                <span className="profile-detail-value">
+                  {user.gender === "MALE"
+                    ? "Male"
+                    : "Female"}
+                </span>
+              </div>
+
+              <div className="profile-detail profile-detail-column">
+                <span className="profile-detail-label">
+                  Bio
+                </span>
+
+                {profileEditing ? (
+                  <textarea
+                    className="profile-edit-textarea"
+                    value={profileBio}
+                    onChange={(event) =>
+                      setProfileBio(
+                        event.target.value,
+                      )
+                    }
+                    maxLength={500}
+                    placeholder="Tell people a little about yourself"
+                    aria-label="Bio"
+                    rows={4}
+                  />
+                ) : (
+                  <span className="profile-bio-value">
+                    {user.bio || "No bio added yet."}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="profile-actions">
+              {profileEditing ? (
+                <>
+                  <button
+                    type="button"
+                    className="profile-save-button"
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                  >
+                    {profileSaving
+                      ? "Saving..."
+                      : "Save changes"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="profile-cancel-button"
+                    onClick={() => {
+                      setProfileDisplayName(
+                        user.displayName ?? "",
+                      );
+                      setProfileBio(
+                        user.bio ?? "",
+                      );
+                      setProfileError("");
+                      setProfileEditing(false);
+                    }}
+                    disabled={profileSaving}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="profile-edit-button"
+                  onClick={() => {
+                    setProfileDisplayName(
+                      user.displayName ?? "",
+                    );
+                    setProfileBio(user.bio ?? "");
+                    setProfileError("");
+                    setProfileEditing(true);
+                  }}
+                >
+                  Edit profile
+                </button>
+              )}
+
               <button
                 type="button"
                 className="profile-logout-button"
@@ -3034,6 +3285,104 @@ function App() {
                 Log out
               </button>
             </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (viewedUserProfileOpen) {
+    const viewedDisplayName =
+      viewedUserProfile?.displayName ||
+      viewedUserProfile?.username ||
+      "Profile";
+
+    return (
+      <div className="profile-page">
+        <header className="profile-header">
+          <button
+            type="button"
+            className="profile-back-button"
+            aria-label="Back to chat"
+            onClick={() => {
+              setViewedUserProfile(null);
+              setViewedUserProfileOpen(false);
+              setViewedUserProfileError("");
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </button>
+
+          <h1>Profile</h1>
+
+          <div className="profile-header-spacer" />
+        </header>
+
+        <main className="profile-content">
+          <section className="profile-card">
+            {viewedUserProfileLoading ? (
+              <div className="profile-loading">
+                Loading profile...
+              </div>
+            ) : viewedUserProfileError ? (
+              <div className="profile-error" role="alert">
+                {viewedUserProfileError}
+              </div>
+            ) : viewedUserProfile ? (
+              <>
+                <div className="profile-identity">
+                  <div className="profile-avatar">
+                    {viewedUserProfile.avatarUrl ? (
+                      <img
+                        src={viewedUserProfile.avatarUrl}
+                        alt={`${viewedDisplayName} avatar`}
+                      />
+                    ) : (
+                      viewedDisplayName
+                        .charAt(0)
+                        .toUpperCase()
+                    )}
+                  </div>
+
+                  <div className="profile-name">
+                    <h2>{viewedDisplayName}</h2>
+                    <p>@{viewedUserProfile.username}</p>
+                  </div>
+                </div>
+
+                <div className="profile-details">
+                  <div className="profile-detail">
+                    <span className="profile-detail-label">
+                      Display name
+                    </span>
+                    <span className="profile-detail-value">
+                      {viewedDisplayName}
+                    </span>
+                  </div>
+
+                  <div className="profile-detail">
+                    <span className="profile-detail-label">
+                      Username
+                    </span>
+                    <span className="profile-detail-value">
+                      @{viewedUserProfile.username}
+                    </span>
+                  </div>
+
+                  <div className="profile-detail profile-detail-column">
+                    <span className="profile-detail-label">
+                      Bio
+                    </span>
+                    <span className="profile-bio-value">
+                      {viewedUserProfile.bio ||
+                        "No bio added yet."}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </section>
         </main>
       </div>
@@ -3667,6 +4016,73 @@ function App() {
           letter-spacing: -0.035em;
         }
 
+        .profile-header-spacer {
+          flex: 1 1 auto;
+        }
+
+        .profile-error {
+          margin: 20px 0 0;
+          padding: 11px 13px;
+          border: 1px solid rgba(200, 77, 77, 0.18);
+          border-radius: 10px;
+          background: rgba(200, 77, 77, 0.05);
+          color: var(--cb-danger);
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .profile-loading {
+          padding: 28px 0;
+          color: var(--cb-text-soft);
+          font-size: 14px;
+          text-align: center;
+        }
+
+        .profile-detail-column {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .profile-edit-input,
+        .profile-edit-textarea {
+          width: min(100%, 420px);
+          box-sizing: border-box;
+          padding: 11px 12px;
+          border: 1px solid var(--cb-border);
+          border-radius: 10px;
+          outline: none;
+          background: #ffffff;
+          color: var(--cb-text);
+          font: inherit;
+          font-size: 14px;
+        }
+
+        .profile-edit-input {
+          text-align: right;
+        }
+
+        .profile-edit-textarea {
+          width: 100%;
+          resize: vertical;
+          line-height: 1.5;
+        }
+
+        .profile-edit-input:focus,
+        .profile-edit-textarea:focus {
+          border-color: rgba(47, 114, 232, 0.45);
+          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.08);
+        }
+
+        .profile-bio-value {
+          width: 100%;
+          color: var(--cb-text-soft);
+          font-size: 14px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
         .profile-content {
           width: min(760px, calc(100% - 44px));
           margin: 20px auto 40px;
@@ -3772,6 +4188,52 @@ function App() {
         }
 
         .profile-actions {
+          padding-top: 22px;
+        }
+
+        .profile-edit-button,
+        .profile-save-button,
+        .profile-cancel-button {
+          width: 100%;
+          min-height: 48px;
+          padding: 0 18px;
+          border-radius: 11px;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .profile-edit-button,
+        .profile-save-button {
+          border: 1px solid rgba(47, 114, 232, 0.18);
+          background: var(--cb-accent);
+          color: #ffffff;
+        }
+
+        .profile-edit-button:hover,
+        .profile-save-button:hover:not(:disabled) {
+          filter: brightness(0.97);
+        }
+
+        .profile-cancel-button {
+          border: 1px solid var(--cb-border);
+          background: #ffffff;
+          color: var(--cb-text-soft);
+        }
+
+        .profile-cancel-button:hover:not(:disabled) {
+          background: #f7f8fa;
+        }
+
+        .profile-save-button:disabled,
+        .profile-cancel-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+        }
+
+        .profile-actions {
+          display: grid;
+          gap: 10px;
           padding-top: 22px;
         }
 
@@ -3964,6 +4426,26 @@ function App() {
         }
 
         .conversation-avatar,
+        .chat-profile-trigger {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex: 1 1 auto;
+          padding: 0;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .chat-profile-trigger:focus-visible {
+          outline: 2px solid rgba(47, 114, 232, 0.45);
+          outline-offset: 4px;
+          border-radius: 12px;
+        }
+
         .chat-header-avatar {
           flex: 0 0 auto;
           width: 46px;
@@ -5316,6 +5798,16 @@ function App() {
             overflow: hidden;
           }
 
+          .mobile-back-button {
+            display: flex;
+            width: 36px;
+            height: 42px;
+            margin-left: -6px;
+            margin-right: -2px;
+            font-size: 30px;
+            font-weight: 800;
+          }
+
           .chat-header {
             min-height: 64px;
             padding: 10px 14px;
@@ -5785,7 +6277,13 @@ function App() {
             type="button"
             className="desktop-profile-button"
             aria-label="Open profile"
-            onClick={() => setProfileOpen(true)}
+            onClick={() => {
+              setProfileDisplayName(user.displayName ?? "");
+              setProfileBio(user.bio ?? "");
+              setProfileError("");
+              setProfileEditing(false);
+              setProfileOpen(true);
+            }}
           >
             <svg
               viewBox="0 0 24 24"
@@ -5907,7 +6405,13 @@ function App() {
                     type="button"
                     className="mobile-profile-button"
                     aria-label="Open profile"
-                    onClick={() => setProfileOpen(true)}
+                    onClick={() => {
+              setProfileDisplayName(user.displayName ?? "");
+              setProfileBio(user.bio ?? "");
+              setProfileError("");
+              setProfileEditing(false);
+              setProfileOpen(true);
+            }}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -6216,44 +6720,53 @@ function App() {
                   ←
                 </button>
 
-                <div className="chat-header-avatar">
-                  {selectedOtherMember
-                    .user.avatarUrl ? (
-                    <img
-                      src={
-                        selectedOtherMember
-                          .user.avatarUrl
-                      }
-                      alt={`${selectedOtherMember.user.displayName || selectedOtherMember.user.username} avatar`}
-                    />
-                  ) : (
-                    (
-                      selectedOtherMember
-                        .user
-                        .displayName ||
-                      selectedOtherMember
-                        .user
-                        .username
+                <button
+                  type="button"
+                  className="chat-profile-trigger"
+                  aria-label={`Open ${selectedOtherMember.user.displayName || selectedOtherMember.user.username} profile`}
+                  onClick={() =>
+                    openUserProfile(
+                      selectedOtherMember.user.id,
                     )
-                      .charAt(0)
-                      .toUpperCase()
-                  )}
-                </div>
+                  }
+                >
+                  <div className="chat-header-avatar">
+                    {selectedOtherMember
+                      .user.avatarUrl ? (
+                      <img
+                        src={
+                          selectedOtherMember
+                            .user.avatarUrl
+                        }
+                        alt={`${selectedOtherMember.user.displayName || selectedOtherMember.user.username} avatar`}
+                      />
+                    ) : (
+                      (
+                        selectedOtherMember
+                          .user
+                          .displayName ||
+                        selectedOtherMember
+                          .user
+                          .username
+                      )
+                        .charAt(0)
+                        .toUpperCase()
+                    )}
+                  </div>
 
-                <div className="chat-header-info">
-                  <h2>
-                    {
-                      selectedOtherMember
-                        .user
-                        .displayName ||
-                      selectedOtherMember
-                        .user
-                        .username
-                    }
-                  </h2>
-
-                  <small>@{selectedOtherMember.user.username}</small>
-                </div>
+                  <div className="chat-header-info">
+                    <h2>
+                      {
+                        selectedOtherMember
+                          .user
+                          .displayName ||
+                        selectedOtherMember
+                          .user
+                          .username
+                      }
+                    </h2>
+                  </div>
+                </button>
 
                 <div className="chat-header-actions">
                   <button
