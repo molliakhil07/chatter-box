@@ -1,5 +1,7 @@
 import { prisma } from "../config/prisma";
 
+export const MAX_MESSAGE_LENGTH = 4000;
+
 const messageSelect = {
   id: true,
   conversationId: true,
@@ -55,6 +57,14 @@ export async function createMessage(
     };
   }
 
+  const normalizedContent = content.trim();
+
+  if (normalizedContent.length === 0 || normalizedContent.length > MAX_MESSAGE_LENGTH) {
+    return {
+      status: "invalid_content" as const,
+    };
+  }
+
   if (replyToMessageId) {
     const replyTarget = await prisma.message.findFirst({
       where: {
@@ -77,7 +87,7 @@ export async function createMessage(
     data: {
       conversationId,
       senderId,
-      content,
+      content: normalizedContent,
       ...(replyToMessageId
         ? { replyToMessageId }
         : {}),
@@ -248,7 +258,12 @@ export async function updateMessage(
   }
 
   if (action === "edit") {
-    if (!content || content.trim().length === 0) {
+    const normalizedContent = content?.trim() ?? "";
+
+    if (
+      normalizedContent.length === 0 ||
+      normalizedContent.length > MAX_MESSAGE_LENGTH
+    ) {
       return {
         status: "invalid_content" as const,
       };
@@ -265,7 +280,7 @@ export async function updateMessage(
         id: messageId,
       },
       data: {
-        content: content.trim(),
+        content: normalizedContent,
       },
       select: messageSelect,
     });

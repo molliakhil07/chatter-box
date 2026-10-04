@@ -8,6 +8,13 @@ import {
   createSession,
 } from "../services/session.service";
 
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+const MAX_DISPLAY_NAME_LENGTH = 50;
+
+const PASSWORD_PATTERN =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/;
+
 export async function register(
   req: Request,
   res: Response,
@@ -29,18 +36,33 @@ export async function register(
       return;
     }
 
-    if (password.length < 8) {
+    if (
+      password.length < MIN_PASSWORD_LENGTH ||
+      password.length > MAX_PASSWORD_LENGTH
+    ) {
       res.status(400).json({
-        error: "Password must be at least 8 characters long",
+        error: `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters long`,
+      });
+      return;
+    }
+
+    if (!PASSWORD_PATTERN.test(password)) {
+      res.status(400).json({
+        error:
+          "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character",
       });
       return;
     }
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!emailPattern.test(normalizedEmail)) {
+    if (
+      normalizedEmail.length > 254 ||
+      !emailPattern.test(normalizedEmail)
+    ) {
       res.status(400).json({
         error: "Invalid email address",
       });
@@ -59,12 +81,25 @@ export async function register(
       return;
     }
 
+    if (typeof displayName === "string") {
+      const normalizedDisplayName = displayName.trim();
+
+      if (normalizedDisplayName.length > MAX_DISPLAY_NAME_LENGTH) {
+        res.status(400).json({
+          error: `Display name must be at most ${MAX_DISPLAY_NAME_LENGTH} characters long`,
+        });
+        return;
+      }
+    }
+
     const user = await registerUser({
       username: normalizedUsername,
       email: normalizedEmail,
       password,
       displayName:
-        typeof displayName === "string" ? displayName : undefined,
+        typeof displayName === "string"
+          ? displayName
+          : undefined,
     });
 
     res.status(201).json({

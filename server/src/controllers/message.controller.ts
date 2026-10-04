@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import {
   clearConversationHistory,
   createMessage,
+  MAX_MESSAGE_LENGTH,
   getConversationMessages,
   updateMessage,
 } from "../services/message.service";
@@ -34,9 +35,21 @@ export async function create(
       return;
     }
 
-    if (typeof content !== "string" || content.trim().length === 0) {
+    const normalizedContent =
+      typeof content === "string"
+        ? content.trim()
+        : "";
+
+    if (!normalizedContent) {
       res.status(400).json({
         error: "Message content is required",
+      });
+      return;
+    }
+
+    if (normalizedContent.length > MAX_MESSAGE_LENGTH) {
+      res.status(400).json({
+        error: `Message content must not exceed ${MAX_MESSAGE_LENGTH} characters`,
       });
       return;
     }
@@ -44,7 +57,7 @@ export async function create(
     const result = await createMessage(
       conversationId,
       userId,
-      content.trim(),
+      normalizedContent,
       typeof replyToMessageId === "string"
         ? replyToMessageId
         : undefined,
@@ -60,6 +73,13 @@ export async function create(
     if (result.status === "invalid_reply") {
       res.status(400).json({
         error: "Reply target message not found",
+      });
+      return;
+    }
+
+    if (result.status === "invalid_content") {
+      res.status(400).json({
+        error: `Message content must be between 1 and ${MAX_MESSAGE_LENGTH} characters`,
       });
       return;
     }
@@ -255,12 +275,24 @@ export async function update(
       return;
     }
 
-    if (
-      action === "edit" &&
-      (typeof content !== "string" || content.trim().length === 0)
-    ) {
+    const normalizedContent =
+      typeof content === "string"
+        ? content.trim()
+        : "";
+
+    if (action === "edit" && !normalizedContent) {
       res.status(400).json({
         error: "Message content is required for editing",
+      });
+      return;
+    }
+
+    if (
+      action === "edit" &&
+      normalizedContent.length > MAX_MESSAGE_LENGTH
+    ) {
+      res.status(400).json({
+        error: `Message content must not exceed ${MAX_MESSAGE_LENGTH} characters`,
       });
       return;
     }
@@ -269,7 +301,7 @@ export async function update(
       messageId,
       userId,
       action,
-      content,
+      normalizedContent,
     );
 
     if (result.status === "not_found") {
