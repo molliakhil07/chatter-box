@@ -65,7 +65,6 @@ export async function create(
     }
 
     const message = result.message;
-
     if (!message) {
       res.status(500).json({
         error: "Unable to create message",
@@ -323,8 +322,49 @@ export async function update(
       return;
     }
 
+    const updatedMessage = result.message;
+
+    const conversationMembers =
+      await prisma.conversationMember.findMany({
+        where: {
+          conversationId: updatedMessage.conversationId,
+          userId: {
+            not: userId,
+          },
+        },
+        select: {
+          userId: true,
+        },
+      });
+
+    const realtimePayload = {
+      conversationId: updatedMessage.conversationId,
+      message: updatedMessage,
+    };
+
+    /*
+     * Notify users who currently have this conversation open.
+     */
+    emitToConversation(
+      updatedMessage.conversationId,
+      "message_updated",
+      realtimePayload,
+    );
+
+    /*
+     * Also notify recipients who are on another screen/chat so
+     * an edit is reflected without requiring a page refresh.
+     */
+    for (const member of conversationMembers) {
+      emitToUser(
+        member.userId,
+        "message_updated",
+        realtimePayload,
+      );
+    }
+
     res.status(200).json({
-      message: result.message,
+      message: updatedMessage,
     });
   } catch (error) {
     console.error("Message update failed:", error);

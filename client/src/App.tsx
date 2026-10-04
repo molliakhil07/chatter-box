@@ -297,10 +297,6 @@ function App() {
     useState(false);
   const [viewedUserProfileError, setViewedUserProfileError] =
     useState("");
-  const [viewedUserProfileContext, setViewedUserProfileContext] =
-    useState<"chat" | "new-chat" | null>(null);
-  const [viewedUserRelationshipState, setViewedUserRelationshipState] =
-    useState<DiscoverableUser["relationshipState"] | null>(null);
 
   /*
    * 7B-5 per-user chat history controls.
@@ -631,15 +627,6 @@ function App() {
       console.log(
         "Chatter Box realtime connection established",
       );
-
-      void (async () => {
-        try {
-          const conversationResponse = await getConversations();
-          setConversations(conversationResponse.conversations);
-        } catch {
-          // Existing REST loading/recovery paths remain authoritative.
-        }
-      })();
     }
 
     function handleDisconnect(
@@ -1655,13 +1642,7 @@ function App() {
     }
   }
 
-  async function openUserProfile(
-    userId: string,
-    context: "chat" | "new-chat" = "chat",
-    relationshipState: DiscoverableUser["relationshipState"] | null = null,
-  ) {
-    setViewedUserProfileContext(context);
-    setViewedUserRelationshipState(relationshipState);
+  async function openUserProfile(userId: string) {
     setViewedUserProfileLoading(true);
     setViewedUserProfileError("");
     setViewedUserProfile(null);
@@ -2024,132 +2005,6 @@ function App() {
     };
   }, [user?.id]);
 
-  /*
-   * Realtime message-request lifecycle events.
-   * A request must appear immediately on the receiver's side,
-   * and a rejection must immediately make the sender requestable.
-   */
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    const socket = connectSocket();
-
-    async function refreshIncomingRequests() {
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/message-requests/incoming`,
-          {
-            credentials: "include",
-          },
-        );
-
-        const body = await response.json();
-
-        if (!response.ok) {
-          return;
-        }
-
-        const requests = Array.isArray(body?.requests)
-          ? body.requests
-          : [];
-
-        setMessageRequests(requests);
-        setHasPendingMessageRequests(requests.length > 0);
-      } catch {
-        // The normal request-list effect remains the recovery path.
-      }
-    }
-
-    const currentUserId = user.id;
-
-    function handleRequestCreated(payload: {
-      requestId?: string;
-      senderId?: string;
-      receiverId?: string;
-    }) {
-      if (
-        !payload ||
-        payload.receiverId !== currentUserId
-      ) {
-        return;
-      }
-
-      void refreshIncomingRequests();
-    }
-
-    function handleRequestRejected(payload: {
-      requestId?: string;
-      senderId?: string;
-      receiverId?: string;
-    }) {
-      if (
-        !payload ||
-        payload.senderId !== currentUserId ||
-        typeof payload.receiverId !== "string"
-      ) {
-        return;
-      }
-
-      const receiverId = payload.receiverId;
-
-      setDiscoverableUsers((currentUsers) =>
-        currentUsers.map((discoverableUser) =>
-          discoverableUser.id === receiverId
-            ? {
-                ...discoverableUser,
-                relationshipState: "REQUESTABLE",
-              }
-            : discoverableUser,
-        ),
-      );
-
-      setSelectedUser((currentSelectedUser) =>
-        currentSelectedUser?.id === receiverId
-          ? {
-              ...currentSelectedUser,
-              relationshipState: "REQUESTABLE",
-            }
-          : currentSelectedUser,
-      );
-
-      if (viewedUserRelationshipState && viewedUserProfileContext === "new-chat") {
-        setViewedUserRelationshipState((currentState) =>
-          currentState === "REQUEST_PENDING"
-            ? "REQUESTABLE"
-            : currentState,
-        );
-      }
-    }
-
-    socket.on(
-      "message_request_created",
-      handleRequestCreated,
-    );
-
-    socket.on(
-      "message_request_rejected",
-      handleRequestRejected,
-    );
-
-    return () => {
-      socket.off(
-        "message_request_created",
-        handleRequestCreated,
-      );
-
-      socket.off(
-        "message_request_rejected",
-        handleRequestRejected,
-      );
-    };
-  }, [
-    user?.id,
-    viewedUserProfileContext,
-    viewedUserRelationshipState,
-  ]);
-
   async function handleChatNowFromAcceptedRequest() {
     const notification = acceptedRequestNotification;
 
@@ -2418,13 +2273,6 @@ function App() {
         );
 
         setMessageRequestSent(true);
-
-        if (viewedUserProfileContext === "new-chat") {
-          setViewedUserProfile(null);
-          setViewedUserProfileOpen(false);
-          setViewedUserProfileContext(null);
-          setViewedUserRelationshipState(null);
-        }
 
         window.setTimeout(() => {
           closeNewChat();
@@ -3271,40 +3119,16 @@ function App() {
         <main className="profile-content">
           <section className="profile-card">
             <div className="profile-identity">
-              <div className="profile-avatar-wrap">
-                <div className="profile-avatar">
-                  {user.avatarUrl ? (
-                    <img
-                      src={user.avatarUrl}
-                      alt={`${profileDisplayName} avatar`}
-                    />
-                  ) : (
-                    profileDisplayName
-                      .charAt(0)
-                      .toUpperCase()
-                  )}
-                </div>
-
-                {!profileEditing && (
-                  <button
-                    type="button"
-                    className="profile-avatar-edit-button"
-                    aria-label="Edit profile"
-                    title="Edit profile"
-                    onClick={() => {
-                      setProfileDisplayName(
-                        user.displayName ?? "",
-                      );
-                      setProfileBio(user.bio ?? "");
-                      setProfileError("");
-                      setProfileEditing(true);
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                    </svg>
-                  </button>
+              <div className="profile-avatar">
+                {user.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={`${profileDisplayName} avatar`}
+                  />
+                ) : (
+                  profileDisplayName
+                    .charAt(0)
+                    .toUpperCase()
                 )}
               </div>
 
@@ -3406,7 +3230,7 @@ function App() {
 
             <div className="profile-actions">
               {profileEditing ? (
-                <div className="profile-edit-actions">
+                <>
                   <button
                     type="button"
                     className="profile-save-button"
@@ -3435,8 +3259,23 @@ function App() {
                   >
                     Cancel
                   </button>
-                </div>
-              ) : null}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="profile-edit-button"
+                  onClick={() => {
+                    setProfileDisplayName(
+                      user.displayName ?? "",
+                    );
+                    setProfileBio(user.bio ?? "");
+                    setProfileError("");
+                    setProfileEditing(true);
+                  }}
+                >
+                  Edit profile
+                </button>
+              )}
 
               <button
                 type="button"
@@ -3469,8 +3308,6 @@ function App() {
               setViewedUserProfile(null);
               setViewedUserProfileOpen(false);
               setViewedUserProfileError("");
-              setViewedUserProfileContext(null);
-              setViewedUserRelationshipState(null);
             }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3544,28 +3381,6 @@ function App() {
                     </span>
                   </div>
                 </div>
-
-                {viewedUserProfileContext === "new-chat" && (
-                  <div className="profile-request-action">
-                    <button
-                      type="button"
-                      className="profile-request-button"
-                      disabled={
-                        sendingMessageRequest ||
-                        viewedUserRelationshipState !== "REQUESTABLE"
-                      }
-                      onClick={handleContinueNewChat}
-                    >
-                      {sendingMessageRequest
-                        ? "Sending..."
-                        : viewedUserRelationshipState === "CONNECTED"
-                          ? "Already connected"
-                          : viewedUserRelationshipState === "REQUEST_PENDING"
-                            ? "Request pending"
-                            : "Send message request"}
-                    </button>
-                  </div>
-                )}
               </>
             ) : null}
           </section>
@@ -4290,13 +4105,6 @@ function App() {
           border-bottom: 1px solid var(--cb-border);
         }
 
-        .profile-avatar-wrap {
-          position: relative;
-          width: 76px;
-          height: 76px;
-          flex: 0 0 auto;
-        }
-
         .profile-avatar {
           width: 76px;
           height: 76px;
@@ -4316,37 +4124,6 @@ function App() {
           width: 100%;
           height: 100%;
           object-fit: cover;
-        }
-
-        .profile-avatar-edit-button {
-          position: absolute;
-          top: -5px;
-          right: -5px;
-          width: 30px;
-          height: 30px;
-          display: grid;
-          place-items: center;
-          padding: 0;
-          border: 1px solid var(--cb-border);
-          border-radius: 50%;
-          background: var(--cb-surface);
-          color: var(--cb-text);
-          box-shadow: 0 3px 10px rgba(24, 39, 58, 0.12);
-          cursor: pointer;
-        }
-
-        .profile-avatar-edit-button:hover {
-          background: #f7f8fa;
-        }
-
-        .profile-avatar-edit-button svg {
-          width: 15px;
-          height: 15px;
-          fill: none;
-          stroke: currentColor;
-          stroke-width: 1.8;
-          stroke-linecap: round;
-          stroke-linejoin: round;
         }
 
         .profile-name {
@@ -4410,117 +4187,54 @@ function App() {
           white-space: nowrap;
         }
 
-        .profile-request-action {
-          padding-top: 22px;
-        }
-
-        .profile-request-button {
-          appearance: none;
-          -webkit-appearance: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 100%;
-          min-height: 48px;
-          margin: 0;
-          padding: 0 18px;
-          border: 1px solid rgba(47, 114, 232, 0.28);
-          border-radius: 12px;
-          outline: none;
-          background: var(--cb-accent);
-          color: #ffffff;
-          font-size: 14px;
-          font-weight: 700;
-          line-height: 1;
-          text-align: center;
-          cursor: pointer;
-          transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
-        }
-
-        .profile-request-button:hover:not(:disabled) {
-          filter: brightness(0.96);
-        }
-
-        .profile-request-button:active:not(:disabled) {
-          transform: translateY(1px);
-        }
-
-        .profile-request-button:focus-visible {
-          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.16);
-        }
-
-        .profile-request-button:disabled {
-          cursor: not-allowed;
-          opacity: 0.55;
-        }
-
         .profile-actions {
-          display: grid;
-          gap: 14px;
           padding-top: 22px;
         }
 
-        .profile-edit-actions {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          width: 100%;
-        }
-
+        .profile-edit-button,
         .profile-save-button,
         .profile-cancel-button {
-          appearance: none;
-          -webkit-appearance: none;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 44px;
+          width: 100%;
+          min-height: 48px;
           padding: 0 18px;
-          border-radius: 10px;
-          outline: none;
+          border-radius: 11px;
           font-size: 14px;
           font-weight: 700;
-          line-height: 1;
           cursor: pointer;
-          transition: transform 120ms ease, background 120ms ease, filter 120ms ease, opacity 120ms ease;
         }
 
+        .profile-edit-button,
         .profile-save-button {
-          flex: 1 1 auto;
-          border: 1px solid rgba(47, 114, 232, 0.28);
+          border: 1px solid rgba(47, 114, 232, 0.18);
           background: var(--cb-accent);
           color: #ffffff;
         }
 
+        .profile-edit-button:hover,
         .profile-save-button:hover:not(:disabled) {
-          filter: brightness(0.96);
+          filter: brightness(0.97);
         }
 
         .profile-cancel-button {
-          flex: 0 0 auto;
           border: 1px solid var(--cb-border);
           background: #ffffff;
-          color: var(--cb-text);
+          color: var(--cb-text-soft);
         }
 
         .profile-cancel-button:hover:not(:disabled) {
           background: #f7f8fa;
         }
 
-        .profile-save-button:active:not(:disabled),
-        .profile-cancel-button:active:not(:disabled) {
-          transform: translateY(1px);
-        }
-
-        .profile-save-button:focus-visible,
-        .profile-cancel-button:focus-visible {
-          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.14);
-        }
-
         .profile-save-button:disabled,
         .profile-cancel-button:disabled {
           cursor: not-allowed;
           opacity: 0.55;
+        }
+
+        .profile-actions {
+          display: grid;
+          gap: 10px;
+          padding-top: 22px;
         }
 
         .profile-logout-button {
@@ -4711,22 +4425,7 @@ function App() {
           box-shadow: inset 3px 0 0 var(--cb-accent);
         }
 
-        .conversation-avatar {
-          width: 52px;
-          height: 52px;
-          min-width: 52px;
-          flex: 0 0 52px;
-          display: grid;
-          place-items: center;
-          overflow: hidden;
-          border: 1px solid rgba(24, 39, 58, 0.08);
-          border-radius: 50%;
-          background: #e9eef6;
-          color: var(--cb-text-soft);
-          font-size: 15px;
-          font-weight: 700;
-        }
-
+        .conversation-avatar,
         .chat-profile-trigger {
           min-width: 0;
           display: flex;
@@ -5498,6 +5197,15 @@ function App() {
           color: var(--cb-text-muted);
         }
 
+        .message-edited-indicator {
+          display: inline-block;
+          margin-left: 5px;
+          font-size: 9px;
+          line-height: 1;
+          opacity: 0.82;
+          white-space: nowrap;
+        }
+
         .message-status-indicator {
           display: inline-block;
           margin-left: 4px;
@@ -5970,22 +5678,10 @@ function App() {
             padding-bottom: 24px;
           }
 
-          .profile-avatar-wrap {
-            width: 64px;
-            height: 64px;
-          }
-
           .profile-avatar {
             width: 64px;
             height: 64px;
             font-size: 21px;
-          }
-
-          .profile-avatar-edit-button {
-            width: 28px;
-            height: 28px;
-            top: -4px;
-            right: -4px;
           }
 
           .profile-name h2 {
@@ -6055,13 +5751,11 @@ function App() {
           }
 
           .conversation-avatar {
-            width: 52px;
-            height: 52px;
-            min-width: 52px;
-            flex: 0 0 52px;
-            border-color: rgba(24, 39, 58, 0.08);
+            width: 62px;
+            height: 62px;
+            border-color: rgba(24, 39, 58, 0.04);
             background: #eef2f7;
-            font-size: 16px;
+            font-size: 19px;
           }
 
           .conversation-item-selected .conversation-avatar {
@@ -6114,36 +5808,13 @@ function App() {
           }
 
           .mobile-back-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 34px;
-            min-width: 34px;
+            display: flex;
+            width: 36px;
             height: 42px;
-            min-height: 42px;
             margin-left: -6px;
             margin-right: -2px;
-            padding: 0;
-            border: 0;
-            border-radius: 0;
-            background: transparent;
-            color: var(--cb-text);
-            cursor: pointer;
-          }
-
-          .mobile-back-button:hover,
-          .mobile-back-button:active {
-            background: transparent;
-          }
-
-          .mobile-back-icon {
-            width: 25px;
-            height: 25px;
-            fill: none;
-            stroke: currentColor;
-            stroke-width: 3;
-            stroke-linecap: round;
-            stroke-linejoin: round;
+            font-size: 30px;
+            font-weight: 800;
           }
 
           .chat-header {
@@ -6167,6 +5838,22 @@ function App() {
 
           .clear-chat-dialog {
             padding: 20px;
+          }
+
+          .mobile-back-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            min-width: 30px;
+            min-height: 42px;
+            padding: 8px 4px;
+            border: 0;
+            background: transparent;
+            color: var(--cb-text);
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
           }
 
           .chat-header-avatar {
@@ -7039,13 +6726,7 @@ function App() {
                   }}
                   aria-label="Back to conversations"
                 >
-                  <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    className="mobile-back-icon"
-                  >
-                    <path d="m15 18-6-6 6-6" />
-                  </svg>
+                  ←
                 </button>
 
                 <button
@@ -7307,6 +6988,17 @@ function App() {
                                     {formatMessageTime(
                                       message.createdAt,
                                     )}
+
+                                    {message.updatedAt !==
+                                      message.createdAt &&
+                                      !message.deletedAt && (
+                                        <span
+                                          className="message-edited-indicator"
+                                          aria-label="Message edited"
+                                        >
+                                          (edited)
+                                        </span>
+                                      )}
                                   </time>
 
                                   {isOwnMessage &&
@@ -7833,11 +7525,6 @@ function App() {
                       onClick={() => {
                         setSelectedUser(discoverableUser);
                         setMessageRequestError("");
-                        void openUserProfile(
-                          discoverableUser.id,
-                          "new-chat",
-                          discoverableUser.relationshipState,
-                        );
                       }}
                     >
                       <div className="new-chat-user-avatar">
