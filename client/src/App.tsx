@@ -3406,7 +3406,7 @@ function App() {
 
             <div className="profile-actions">
               {profileEditing ? (
-                <>
+                <div className="profile-edit-actions">
                   <button
                     type="button"
                     className="profile-save-button"
@@ -3435,7 +3435,7 @@ function App() {
                   >
                     Cancel
                   </button>
-                </>
+                </div>
               ) : null}
 
               <button
@@ -4320,8 +4320,8 @@ function App() {
 
         .profile-avatar-edit-button {
           position: absolute;
+          top: -5px;
           right: -5px;
-          bottom: -5px;
           width: 30px;
           height: 30px;
           display: grid;
@@ -4415,20 +4415,38 @@ function App() {
         }
 
         .profile-request-button {
+          appearance: none;
+          -webkit-appearance: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           width: 100%;
           min-height: 48px;
+          margin: 0;
           padding: 0 18px;
-          border: 1px solid rgba(47, 114, 232, 0.18);
-          border-radius: 11px;
+          border: 1px solid rgba(47, 114, 232, 0.28);
+          border-radius: 12px;
+          outline: none;
           background: var(--cb-accent);
           color: #ffffff;
           font-size: 14px;
           font-weight: 700;
+          line-height: 1;
+          text-align: center;
           cursor: pointer;
+          transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
         }
 
         .profile-request-button:hover:not(:disabled) {
-          filter: brightness(0.97);
+          filter: brightness(0.96);
+        }
+
+        .profile-request-button:active:not(:disabled) {
+          transform: translateY(1px);
+        }
+
+        .profile-request-button:focus-visible {
+          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.16);
         }
 
         .profile-request-button:disabled {
@@ -4437,50 +4455,72 @@ function App() {
         }
 
         .profile-actions {
+          display: grid;
+          gap: 14px;
           padding-top: 22px;
+        }
+
+        .profile-edit-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
         }
 
         .profile-save-button,
         .profile-cancel-button {
-          width: 100%;
-          min-height: 48px;
+          appearance: none;
+          -webkit-appearance: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 44px;
           padding: 0 18px;
-          border-radius: 11px;
+          border-radius: 10px;
+          outline: none;
           font-size: 14px;
           font-weight: 700;
+          line-height: 1;
           cursor: pointer;
+          transition: transform 120ms ease, background 120ms ease, filter 120ms ease, opacity 120ms ease;
         }
 
         .profile-save-button {
-          border: 1px solid rgba(47, 114, 232, 0.18);
+          flex: 1 1 auto;
+          border: 1px solid rgba(47, 114, 232, 0.28);
           background: var(--cb-accent);
           color: #ffffff;
         }
 
         .profile-save-button:hover:not(:disabled) {
-          filter: brightness(0.97);
+          filter: brightness(0.96);
         }
 
         .profile-cancel-button {
+          flex: 0 0 auto;
           border: 1px solid var(--cb-border);
           background: #ffffff;
-          color: var(--cb-text-soft);
+          color: var(--cb-text);
         }
 
         .profile-cancel-button:hover:not(:disabled) {
           background: #f7f8fa;
         }
 
+        .profile-save-button:active:not(:disabled),
+        .profile-cancel-button:active:not(:disabled) {
+          transform: translateY(1px);
+        }
+
+        .profile-save-button:focus-visible,
+        .profile-cancel-button:focus-visible {
+          box-shadow: 0 0 0 3px rgba(47, 114, 232, 0.14);
+        }
+
         .profile-save-button:disabled,
         .profile-cancel-button:disabled {
           cursor: not-allowed;
           opacity: 0.55;
-        }
-
-        .profile-actions {
-          display: grid;
-          gap: 10px;
-          padding-top: 22px;
         }
 
         .profile-logout-button {
@@ -5944,8 +5984,8 @@ function App() {
           .profile-avatar-edit-button {
             width: 28px;
             height: 28px;
+            top: -4px;
             right: -4px;
-            bottom: -4px;
           }
 
           .profile-name h2 {

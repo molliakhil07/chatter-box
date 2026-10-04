@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 
-import { prisma } from "../config/prisma";
 import { emitToUser } from "../socket";
 
 import {
@@ -78,15 +77,14 @@ export async function create(
 }
 
 emitToUser(result.request.receiverId, "message_request_created", {
-  requestId: result.request.id,
-  senderId: result.request.senderId,
-  receiverId: result.request.receiverId,
-  createdAt: result.request.createdAt,
-});
+      requestId: result.request.id,
+      senderId: result.request.senderId,
+      receiverId: result.request.receiverId,
+    });
 
-res.status(201).json({
-  request: result.request,
-});
+    res.status(201).json({
+      request: result.request,
+    });
   } catch (error) {
     console.error(
       "Message request creation failed:",
@@ -383,17 +381,10 @@ export async function reject(
       return;
     }
 
-    await prisma.messageRequest.delete({
-      where: {
-        id: result.request.id,
-      },
-    });
-
     emitToUser(result.request.senderId, "message_request_rejected", {
       requestId: result.request.id,
       senderId: result.request.senderId,
       receiverId: result.request.receiverId,
-      respondedAt: result.request.respondedAt,
     });
 
     res.status(200).json({

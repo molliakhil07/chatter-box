@@ -30,8 +30,6 @@ export async function createMessageRequest(
     };
   }
 
-
-  
   const receiver = await prisma.user.findUnique({
     where: {
       id: receiverId,
@@ -78,21 +76,57 @@ export async function createMessageRequest(
     };
   }
 
+  /*
+   * A MessageRequest is retained after accept/reject in the current
+   * schema. Reusing that record is important because deployments may
+   * enforce one request row per sender/receiver pair.
+   *
+   * This also fixes the case where a conversation was deleted after an
+   * earlier request was accepted: the old request is reset to PENDING
+   * instead of trying to INSERT a duplicate row.
+   */
   const existingRequest =
     await prisma.messageRequest.findFirst({
       where: {
         senderId,
         receiverId,
-        status: "PENDING",
       },
       select: {
         id: true,
+        status: true,
       },
     });
 
-  if (existingRequest) {
+  if (existingRequest?.status === "PENDING") {
     return {
       status: "request_exists",
+    };
+  }
+
+  if (existingRequest) {
+    const request =
+      await prisma.messageRequest.update({
+        where: {
+          id: existingRequest.id,
+        },
+        data: {
+          status: "PENDING",
+          respondedAt: null,
+          acceptedSeenAt: null,
+        },
+        select: {
+          id: true,
+          senderId: true,
+          receiverId: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+    return {
+      status: "created",
+      request,
     };
   }
 
@@ -284,7 +318,6 @@ export async function acceptMessageRequest(
     acceptedBy: request.receiver,
   };
 }
-
 
 export async function getAcceptedMessageRequestNotification(
   userId: string,
