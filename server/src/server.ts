@@ -297,8 +297,68 @@ io.on("connection", (socket) => {
         return;
       }
 
-      /* Only the original sender should receive the read status. */
+      /*
+       * Persist the current user's read pointer so the sender's
+       * read state survives refreshes and future message-history loads.
+       * The pointer is monotonic and only advances for incoming messages.
+       */
       if (message.senderId !== userId) {
+        const currentMember =
+          await prisma.conversationMember.findUnique({
+            where: {
+              conversationId_userId: {
+                conversationId,
+                userId,
+              },
+            },
+            select: {
+              id: true,
+              lastReadMessageId: true,
+            },
+          });
+
+        if (currentMember) {
+          const currentReadMessage =
+            currentMember.lastReadMessageId
+              ? await prisma.message.findFirst({
+                  where: {
+                    id: currentMember.lastReadMessageId,
+                    conversationId,
+                  },
+                  select: {
+                    createdAt: true,
+                  },
+                })
+              : null;
+
+          const targetReadMessage =
+            await prisma.message.findFirst({
+              where: {
+                id: message.id,
+                conversationId,
+              },
+              select: {
+                createdAt: true,
+              },
+            });
+
+          if (
+            targetReadMessage &&
+            (!currentReadMessage ||
+              targetReadMessage.createdAt >
+                currentReadMessage.createdAt)
+          ) {
+            await prisma.conversationMember.update({
+              where: {
+                id: currentMember.id,
+              },
+              data: {
+                lastReadMessageId: message.id,
+              },
+            });
+          }
+        }
+
         emitToUser(message.senderId, "message_status", {
           messageId: message.id,
           status: "read",

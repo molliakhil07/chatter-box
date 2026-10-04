@@ -5,6 +5,7 @@ import {
   getUserConversations,
   getConversationById,
   removeConversationMember,
+  deleteConversation,
   userExists,
 } from "../services/conversation.service";
 
@@ -219,6 +220,51 @@ export async function removeMember(
     console.error("Conversation member removal failed:", error);
     res.status(500).json({
       error: "Unable to remove conversation member",
+    });
+  }
+}
+export async function removeConversation(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const userId = req.userId;
+    const { conversationId } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    if (
+      typeof conversationId !== "string" ||
+      conversationId.trim().length === 0
+    ) {
+      res.status(400).json({
+        error: "conversationId is required",
+      });
+      return;
+    }
+
+    const result = await deleteConversation(
+      conversationId,
+      userId,
+    );
+
+    if (result.status === "conversation_not_found") {
+      res.status(404).json({
+        error: "Conversation not found",
+      });
+      return;
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Conversation deletion failed:", error);
+    res.status(500).json({
+      error: "Unable to delete conversation",
     });
   }
 }

@@ -170,3 +170,67 @@ export async function removeConversationMember(
     },
   });
 }
+export async function deleteConversation(
+  conversationId: string,
+  userId: string,
+) {
+  const membership = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId,
+        userId,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!membership) {
+    return {
+      status: "conversation_not_found" as const,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.conversationMember.updateMany({
+      where: {
+        conversationId,
+      },
+      data: {
+        lastReadMessageId: null,
+      },
+    });
+
+    await tx.message.updateMany({
+      where: {
+        conversationId,
+      },
+      data: {
+        replyToMessageId: null,
+      },
+    });
+
+    await tx.message.deleteMany({
+      where: {
+        conversationId,
+      },
+    });
+
+    await tx.conversationMember.deleteMany({
+      where: {
+        conversationId,
+      },
+    });
+
+    await tx.conversation.delete({
+      where: {
+        id: conversationId,
+      },
+    });
+  });
+
+  return {
+    status: "deleted" as const,
+  };
+}

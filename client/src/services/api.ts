@@ -80,6 +80,22 @@ export async function getConversations(): Promise<ConversationsResponse> {
   return response.json();
 }
 
+export async function deleteConversation(
+  conversationId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/conversations/${conversationId}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Unable to delete conversation");
+  }
+}
+
 /* ---------------- MESSAGES ---------------- */
 
 export interface MessageSender {

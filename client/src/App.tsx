@@ -4,12 +4,14 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   getConversationMessages,
   getConversations,
   getCurrentUser,
   clearConversationHistory,
+  deleteConversation,
   sendConversationMessage,
   updateMessage,
   type Conversation,
@@ -279,6 +281,27 @@ function App() {
   const [clearChatError, setClearChatError] = useState("");
 
   /*
+   * Conversation deletion state.
+   * Used by both the long-press conversation menu and
+   * the chat-header menu.
+   */
+  const [conversationActionMenuId, setConversationActionMenuId] =
+    useState<string | null>(null);
+  const [deleteConversationConfirmOpen, setDeleteConversationConfirmOpen] =
+    useState(false);
+  const [deleteConversationId, setDeleteConversationId] =
+    useState<string | null>(null);
+  const [deletingConversation, setDeletingConversation] =
+    useState(false);
+  const [deleteConversationError, setDeleteConversationError] =
+    useState("");
+
+  const conversationLongPressTimerRef =
+    useRef<number | null>(null);
+  const conversationLongPressTriggeredRef =
+    useRef(false);
+
+  /*
    * 5D-1 notification indicator state.
    *
    * This stays false until the real incoming-request API is connected
@@ -294,6 +317,8 @@ function App() {
   const [messageRequestsError, setMessageRequestsError] =
     useState(false);
   const [acceptingMessageRequestId, setAcceptingMessageRequestId] =
+    useState<string | null>(null);
+  const [rejectingMessageRequestId, setRejectingMessageRequestId] =
     useState<string | null>(null);
   const [messageRequestActionError, setMessageRequestActionError] =
     useState("");
@@ -1953,44 +1978,24 @@ function App() {
         setMessageRequests(remainingRequests);
         setHasPendingMessageRequests(remainingRequests.length > 0);
 
-        const createdConversation =
-          body?.conversation &&
-          typeof body.conversation.id === "string"
-            ? body.conversation
-            : null;
+        /*
+         * The accept response contains a compact conversation object.
+         * Refresh the full conversation list before selecting it so
+         * selectedOtherMember always has the complete user shape.
+         */
+        const conversationResponse =
+          await getConversations();
+
+        setConversations(
+          conversationResponse.conversations,
+        );
 
         const createdConversationId =
-          typeof body?.conversationId === "string"
-            ? body.conversationId
-            : createdConversation?.id ?? null;
-
-        if (createdConversation) {
-          setConversations((currentConversations) => {
-            const alreadyExists = currentConversations.some(
-              (conversation) =>
-                conversation.id === createdConversation.id,
-            );
-
-            if (alreadyExists) {
-              return currentConversations.map((conversation) =>
-                conversation.id === createdConversation.id
-                  ? createdConversation
-                  : conversation,
-              );
-            }
-
-            return [
-              createdConversation,
-              ...currentConversations,
-            ];
-          });
-        } else {
-          const conversationResponse = await getConversations();
-
-          setConversations(
-            conversationResponse.conversations,
-          );
-        }
+          typeof body?.conversation?.id === "string"
+            ? body.conversation.id
+            : typeof body?.conversationId === "string"
+              ? body.conversationId
+              : null;
 
         if (createdConversationId) {
           setSelectedConversationId(
@@ -2042,6 +2047,84 @@ function App() {
       );
     } finally {
       setAcceptingMessageRequestId(null);
+    }
+  }
+
+  async function handleRejectMessageRequest(requestId: string) {
+    if (
+      acceptingMessageRequestId ||
+      rejectingMessageRequestId
+    ) {
+      return;
+    }
+
+    setRejectingMessageRequestId(requestId);
+    setMessageRequestActionError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/message-requests/${requestId}/reject`,
+        {
+          method: "POST",
+          credentials: "include",
+        },
+      );
+
+      const body = await response.json();
+
+      if (response.status === 200) {
+        const remainingRequests = messageRequests.filter(
+          (request) => request.id !== requestId,
+        );
+
+        setMessageRequests(remainingRequests);
+        setHasPendingMessageRequests(
+          remainingRequests.length > 0,
+        );
+        return;
+      }
+
+      if (response.status === 401) {
+        setMessageRequestActionError(
+          "Your session has expired. Please sign in again.",
+        );
+        return;
+      }
+
+      if (response.status === 403) {
+        setMessageRequestActionError(
+          "You cannot reject this message request.",
+        );
+        return;
+      }
+
+      if (response.status === 404) {
+        setMessageRequestActionError(
+          "This message request is no longer available.",
+        );
+        return;
+      }
+
+      if (response.status === 409) {
+        setMessageRequestActionError(
+          typeof body?.error === "string"
+            ? body.error
+            : "This message request has already been handled.",
+        );
+        return;
+      }
+
+      setMessageRequestActionError(
+        typeof body?.error === "string"
+          ? body.error
+          : "Unable to reject this message request. Please try again.",
+      );
+    } catch {
+      setMessageRequestActionError(
+        "Unable to reach Chatter Box. Please try again.",
+      );
+    } finally {
+      setRejectingMessageRequestId(null);
     }
   }
 
@@ -2151,6 +2234,10 @@ function App() {
       if (!target?.closest(".chat-header-actions")) {
         setChatMenuOpen(false);
       }
+
+      if (!target?.closest(".conversation-item-wrap")) {
+        setConversationActionMenuId(null);
+      }
     }
 
     document.addEventListener(
@@ -2165,6 +2252,17 @@ function App() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (conversationLongPressTimerRef.current !== null) {
+        window.clearTimeout(
+          conversationLongPressTimerRef.current,
+        );
+      }
+    };
+  }, []);
+
 
   function openClearChatConfirmation() {
     setChatMenuOpen(false);
@@ -2221,6 +2319,147 @@ function App() {
       );
     } finally {
       setClearingChat(false);
+    }
+  }
+
+  function beginConversationLongPress(
+    conversationId: string,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) {
+    if (
+      event.pointerType === "mouse" &&
+      event.button !== 0
+    ) {
+      return;
+    }
+
+    if (conversationLongPressTimerRef.current !== null) {
+      window.clearTimeout(
+        conversationLongPressTimerRef.current,
+      );
+    }
+
+    conversationLongPressTriggeredRef.current = false;
+
+    conversationLongPressTimerRef.current =
+      window.setTimeout(() => {
+        conversationLongPressTriggeredRef.current = true;
+        setConversationActionMenuId(conversationId);
+      }, 550);
+  }
+
+  function cancelConversationLongPress() {
+    if (conversationLongPressTimerRef.current !== null) {
+      window.clearTimeout(
+        conversationLongPressTimerRef.current,
+      );
+      conversationLongPressTimerRef.current = null;
+    }
+  }
+
+  function handleConversationItemClick(
+    conversationId: string,
+  ) {
+    if (conversationLongPressTriggeredRef.current) {
+      conversationLongPressTriggeredRef.current = false;
+      return;
+    }
+
+    setConversationActionMenuId(null);
+
+    setUnreadCounts((currentCounts) => {
+      if (!(conversationId in currentCounts)) {
+        return currentCounts;
+      }
+
+      const nextCounts = {
+        ...currentCounts,
+      };
+
+      delete nextCounts[conversationId];
+      return nextCounts;
+    });
+
+    setOpenMessageActionId(null);
+    setSelectedConversationId(conversationId);
+  }
+
+  function openDeleteConversationConfirmation(
+    conversationId: string,
+  ) {
+    setConversationActionMenuId(null);
+    setChatMenuOpen(false);
+    setDeleteConversationError("");
+    setDeleteConversationId(conversationId);
+    setDeleteConversationConfirmOpen(true);
+  }
+
+  function cancelDeleteConversation() {
+    if (deletingConversation) {
+      return;
+    }
+
+    setDeleteConversationConfirmOpen(false);
+    setDeleteConversationId(null);
+    setDeleteConversationError("");
+  }
+
+  async function handleDeleteConversation() {
+    const conversationId = deleteConversationId;
+
+    if (!conversationId || deletingConversation) {
+      return;
+    }
+
+    setDeletingConversation(true);
+    setDeleteConversationError("");
+
+    try {
+      await deleteConversation(conversationId);
+
+      setConversations((currentConversations) =>
+        currentConversations.filter(
+          (conversation) =>
+            conversation.id !== conversationId,
+        ),
+      );
+
+      setUnreadCounts((currentCounts) => {
+        if (!(conversationId in currentCounts)) {
+          return currentCounts;
+        }
+
+        const nextCounts = {
+          ...currentCounts,
+        };
+
+        delete nextCounts[conversationId];
+        return nextCounts;
+      });
+
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+        setMessages([]);
+        setNextCursor(null);
+        setMessageStatuses({});
+        readMessageIdsRef.current.clear();
+        setOpenMessageActionId(null);
+        setEditingMessageId(null);
+        setEditingMessageContent("");
+        setMessageUpdateError("");
+        setReplyingToMessage(null);
+        setMessageInput("");
+        setSendMessageError(false);
+      }
+
+      setDeleteConversationConfirmOpen(false);
+      setDeleteConversationId(null);
+    } catch {
+      setDeleteConversationError(
+        "Unable to delete conversation. Please try again.",
+      );
+    } finally {
+      setDeletingConversation(false);
     }
   }
 
@@ -2892,7 +3131,10 @@ function App() {
                         onClick={() =>
                           handleAcceptMessageRequest(request.id)
                         }
-                        disabled={acceptingMessageRequestId !== null}
+                        disabled={
+                          acceptingMessageRequestId !== null ||
+                          rejectingMessageRequestId !== null
+                        }
                       >
                         {acceptingMessageRequestId === request.id
                           ? "Accepting..."
@@ -2902,9 +3144,17 @@ function App() {
                       <button
                         type="button"
                         className="request-action"
-                        disabled={acceptingMessageRequestId !== null}
+                        onClick={() =>
+                          handleRejectMessageRequest(request.id)
+                        }
+                        disabled={
+                          acceptingMessageRequestId !== null ||
+                          rejectingMessageRequestId !== null
+                        }
                       >
-                        Reject
+                        {rejectingMessageRequestId === request.id
+                          ? "Rejecting..."
+                          : "Reject"}
                       </button>
                     </div>
                   </article>
@@ -3644,6 +3894,45 @@ function App() {
           overflow-y: auto;
           overscroll-behavior-y: contain;
           scrollbar-width: thin;
+        }
+
+        .conversation-item-wrap {
+          position: relative;
+          width: 100%;
+        }
+
+        .conversation-action-menu {
+          position: absolute;
+          z-index: 30;
+          top: 52px;
+          right: 12px;
+          min-width: 190px;
+          padding: 6px;
+          border: 1px solid var(--cb-border);
+          border-radius: 10px;
+          background: var(--cb-surface);
+          box-shadow: 0 12px 30px rgba(24, 39, 58, 0.16);
+        }
+
+        .conversation-action-menu button {
+          width: 100%;
+          min-height: 38px;
+          padding: 8px 11px;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: var(--cb-danger);
+          font: inherit;
+          font-size: 13px;
+          font-weight: 650;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .conversation-action-menu button:hover,
+        .conversation-action-menu button:focus-visible {
+          background: rgba(214, 68, 68, 0.08);
+          outline: none;
         }
 
         .conversation-item {
@@ -5729,33 +6018,39 @@ function App() {
                     conversation.id;
 
                   return (
-                    <button
+                    <div
                       key={conversation.id}
-                      type="button"
-                      className={`conversation-item ${
-                        isSelected
-                          ? "conversation-item-selected"
-                          : ""
-                      }`}
-                      onClick={() => {
-                        setUnreadCounts((currentCounts) => {
-                          if (!(conversation.id in currentCounts)) {
-                            return currentCounts;
-                          }
-
-                          const nextCounts = {
-                            ...currentCounts,
-                          };
-
-                          delete nextCounts[conversation.id];
-                          return nextCounts;
-                        });
-
-                        setOpenMessageActionId(null);
-                        setSelectedConversationId(
-                          conversation.id,
-                        );
-                      }}
+                      className="conversation-item-wrap"
+                    >
+                      <button
+                        type="button"
+                        className={`conversation-item ${
+                          isSelected
+                            ? "conversation-item-selected"
+                            : ""
+                        }`}
+                        onPointerDown={(event) =>
+                          beginConversationLongPress(
+                            conversation.id,
+                            event,
+                          )
+                        }
+                        onPointerUp={cancelConversationLongPress}
+                        onPointerLeave={cancelConversationLongPress}
+                        onPointerCancel={cancelConversationLongPress}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          cancelConversationLongPress();
+                          conversationLongPressTriggeredRef.current = true;
+                          setConversationActionMenuId(
+                            conversation.id,
+                          );
+                        }}
+                        onClick={() =>
+                          handleConversationItemClick(
+                            conversation.id,
+                          )
+                        }
                     >
                       <div className="conversation-avatar">
                         {otherMember.user
@@ -5805,14 +6100,37 @@ function App() {
                         )}
                       </time>
 
-                      <svg
-                        className="conversation-chevron"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path d="m9 5 7 7-7 7" />
-                      </svg>
-                    </button>
+                        <svg
+                          className="conversation-chevron"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path d="m9 5 7 7-7 7" />
+                        </svg>
+                      </button>
+
+                      {conversationActionMenuId === conversation.id && (
+                        <div
+                          className="conversation-action-menu"
+                          role="menu"
+                          onPointerDown={(event) =>
+                            event.stopPropagation()
+                          }
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() =>
+                              openDeleteConversationConfirmation(
+                                conversation.id,
+                              )
+                            }
+                          >
+                            Delete conversation
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   );
                 },
               )}
@@ -5963,6 +6281,20 @@ function App() {
                         onClick={openClearChatConfirmation}
                       >
                         Clear chat
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          if (selectedConversationId) {
+                            openDeleteConversationConfirmation(
+                              selectedConversationId,
+                            );
+                          }
+                        }}
+                      >
+                        Delete conversation
                       </button>
                     </div>
                   )}
@@ -6443,6 +6775,57 @@ function App() {
           )}
         </section>
       </main>
+
+      {deleteConversationConfirmOpen && (
+        <div
+          className="clear-chat-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-conversation-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              cancelDeleteConversation();
+            }
+          }}
+        >
+          <div className="clear-chat-dialog">
+            <h2 id="delete-conversation-title">
+              Delete conversation?
+            </h2>
+            <p>
+              This permanently deletes the conversation and its
+              messages for everyone. This action cannot be undone.
+            </p>
+
+            {deleteConversationError && (
+              <div className="clear-chat-error" role="alert">
+                {deleteConversationError}
+              </div>
+            )}
+
+            <div className="clear-chat-actions">
+              <button
+                type="button"
+                className="clear-chat-cancel"
+                onClick={cancelDeleteConversation}
+                disabled={deletingConversation}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="clear-chat-confirm"
+                onClick={handleDeleteConversation}
+                disabled={deletingConversation}
+              >
+                {deletingConversation
+                  ? "Deleting..."
+                  : "Delete conversation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {clearChatConfirmOpen && (
         <div

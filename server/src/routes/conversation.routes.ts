@@ -5,6 +5,7 @@ import {
   getById,
   list,
   removeMember,
+  removeConversation,
 } from "../controllers/conversation.controller";
 
 const router = Router();
@@ -12,6 +13,12 @@ const router = Router();
 router.post("/", requireAuth, create);
 router.get("/", requireAuth, list);
 router.get("/:conversationId", requireAuth, getById);
+
+router.delete(
+  "/:conversationId",
+  requireAuth,
+  removeConversation,
+);
 
 router.delete(
   "/:conversationId/members/:userId",
