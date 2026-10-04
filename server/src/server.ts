@@ -174,9 +174,10 @@ io.on("connection", (socket) => {
       socket.join(`conversation:${conversationId}`);
 
       /*
-       * Opening the conversation means incoming messages are now
-       * delivered to this user. Notify each original sender directly.
-       * Status is realtime-only in the current v1 schema.
+       * Opening the conversation means incoming messages are delivered.
+       * The client also reports visibility, but persisting the latest
+       * incoming message here makes the read state reliable after refresh
+       * and after reconnects when the conversation opens at the latest message.
        */
       const incomingMessages = await prisma.message.findMany({
         where: {
@@ -185,9 +186,13 @@ io.on("connection", (socket) => {
             not: userId,
           },
         },
+        orderBy: {
+          createdAt: "asc",
+        },
         select: {
           id: true,
           senderId: true,
+          createdAt: true,
         },
       });
 
@@ -196,6 +201,65 @@ io.on("connection", (socket) => {
           messageId: message.id,
           status: "delivered",
         });
+      }
+
+      const latestIncomingMessage =
+        incomingMessages[incomingMessages.length - 1];
+
+      if (latestIncomingMessage) {
+        const currentMember =
+          await prisma.conversationMember.findUnique({
+            where: {
+              conversationId_userId: {
+                conversationId,
+                userId,
+              },
+            },
+            select: {
+              lastReadMessageId: true,
+            },
+          });
+
+        let shouldAdvanceReadPointer = true;
+
+        if (currentMember?.lastReadMessageId) {
+          const currentReadMessage =
+            await prisma.message.findFirst({
+              where: {
+                id: currentMember.lastReadMessageId,
+                conversationId,
+              },
+              select: {
+                createdAt: true,
+              },
+            });
+
+          shouldAdvanceReadPointer =
+            !currentReadMessage ||
+            currentReadMessage.createdAt.getTime() <
+              latestIncomingMessage.createdAt.getTime();
+        }
+
+        if (shouldAdvanceReadPointer) {
+          await prisma.conversationMember.update({
+            where: {
+              conversationId_userId: {
+                conversationId,
+                userId,
+              },
+            },
+            data: {
+              lastReadMessageId: latestIncomingMessage.id,
+            },
+          });
+        }
+
+        for (const message of incomingMessages) {
+          emitToUser(message.senderId, "message_status", {
+            messageId: message.id,
+            status: "read",
+          });
+        }
       }
 
       callback?.({
@@ -286,6 +350,7 @@ io.on("connection", (socket) => {
         select: {
           id: true,
           senderId: true,
+          createdAt: true,
         },
       });
 
@@ -298,9 +363,9 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * Persist the current user's read pointer so the sender's
-       * read state survives refreshes and future message-history loads.
-       * The pointer is monotonic and only advances for incoming messages.
+       * Only an incoming message can advance this user's read pointer.
+       * The pointer is monotonic so an older visibility event can never
+       * move the read state backwards.
        */
       if (message.senderId !== userId) {
         const currentMember =
@@ -312,29 +377,17 @@ io.on("connection", (socket) => {
               },
             },
             select: {
-              id: true,
               lastReadMessageId: true,
             },
           });
 
-        if (currentMember) {
-          const currentReadMessage =
-            currentMember.lastReadMessageId
-              ? await prisma.message.findFirst({
-                  where: {
-                    id: currentMember.lastReadMessageId,
-                    conversationId,
-                  },
-                  select: {
-                    createdAt: true,
-                  },
-                })
-              : null;
+        let shouldAdvanceReadPointer = true;
 
-          const targetReadMessage =
+        if (currentMember?.lastReadMessageId) {
+          const currentReadMessage =
             await prisma.message.findFirst({
               where: {
-                id: message.id,
+                id: currentMember.lastReadMessageId,
                 conversationId,
               },
               select: {
@@ -342,21 +395,24 @@ io.on("connection", (socket) => {
               },
             });
 
-          if (
-            targetReadMessage &&
-            (!currentReadMessage ||
-              targetReadMessage.createdAt >
-                currentReadMessage.createdAt)
-          ) {
-            await prisma.conversationMember.update({
-              where: {
-                id: currentMember.id,
+          shouldAdvanceReadPointer =
+            !currentReadMessage ||
+            currentReadMessage.createdAt.getTime() <
+              message.createdAt.getTime();
+        }
+
+        if (shouldAdvanceReadPointer) {
+          await prisma.conversationMember.update({
+            where: {
+              conversationId_userId: {
+                conversationId,
+                userId,
               },
-              data: {
-                lastReadMessageId: message.id,
-              },
-            });
-          }
+            },
+            data: {
+              lastReadMessageId: message.id,
+            },
+          });
         }
 
         emitToUser(message.senderId, "message_status", {

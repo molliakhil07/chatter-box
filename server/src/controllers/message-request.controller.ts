@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 
+import { prisma } from "../config/prisma";
 import { emitToUser } from "../socket";
 
 import {
@@ -75,6 +76,13 @@ export async function create(
   });
   return;
 }
+
+emitToUser(result.request.receiverId, "message_request_created", {
+  requestId: result.request.id,
+  senderId: result.request.senderId,
+  receiverId: result.request.receiverId,
+  createdAt: result.request.createdAt,
+});
 
 res.status(201).json({
   request: result.request,
@@ -374,6 +382,19 @@ export async function reject(
       });
       return;
     }
+
+    await prisma.messageRequest.delete({
+      where: {
+        id: result.request.id,
+      },
+    });
+
+    emitToUser(result.request.senderId, "message_request_rejected", {
+      requestId: result.request.id,
+      senderId: result.request.senderId,
+      receiverId: result.request.receiverId,
+      respondedAt: result.request.respondedAt,
+    });
 
     res.status(200).json({
       request: result.request,

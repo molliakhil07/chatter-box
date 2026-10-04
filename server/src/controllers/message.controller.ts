@@ -66,6 +66,13 @@ export async function create(
 
     const message = result.message;
 
+    if (!message) {
+      res.status(500).json({
+        error: "Unable to create message",
+      });
+      return;
+    }
+
     const conversationMembers =
       await prisma.conversationMember.findMany({
         where: {
@@ -105,6 +112,22 @@ export async function create(
         "message_new",
         realtimePayload,
       );
+
+      if (member.userId !== userId) {
+        /*
+         * The recipient's authenticated user room has received the
+         * message event, so the sender can move from sent -> delivered
+         * immediately without waiting for the recipient to open the chat.
+         */
+        emitToUser(
+          userId,
+          "message_status",
+          {
+            messageId: message.id,
+            status: "delivered",
+          },
+        );
+      }
     }
 
     res.status(201).json({ message });
