@@ -1,4 +1,3 @@
-import { logError } from "../logger";
 import type { Request, Response } from "express";
 import {
   clearConversationHistory,
@@ -110,7 +109,7 @@ export async function create(
 
     res.status(201).json({ message });
   } catch (error) {
-    logError("Message creation failed:", error);
+    console.error("Message creation failed:", error);
     res.status(500).json({
       error: "Unable to create message",
     });
@@ -168,7 +167,7 @@ export async function list(
 
     res.status(200).json({ messages });
   } catch (error) {
-    logError("Message retrieval failed:", error);
+    console.error("Message retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve messages",
     });
@@ -216,7 +215,7 @@ export async function clear(
       status: "cleared",
     });
   } catch (error) {
-    logError("Conversation history clear failed:", error);
+    console.error("Conversation history clear failed:", error);
     res.status(500).json({
       error: "Unable to clear chat",
     });
@@ -305,7 +304,7 @@ export async function update(
       message: result.message,
     });
   } catch (error) {
-    logError("Message update failed:", error);
+    console.error("Message update failed:", error);
     res.status(500).json({
       error: "Unable to update message",
     });

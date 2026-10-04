@@ -1,4 +1,3 @@
-import { logError } from "../logger";
 import type {
   Request,
   Response,
@@ -35,7 +34,7 @@ export async function requireAuth(
 
     next();
   } catch (error) {
-    logError("Authentication failed:", error);
+    console.error("Authentication failed:", error);
 
     res.status(500).json({
       error: "Authentication check failed",

@@ -9,7 +9,7 @@ const messageWriteRateLimit = createRateLimiter({
   keyPrefix: "message-write",
   windowMs: 60 * 1000,
   max: 60,
-  message: "Too many message actions. Please slow down and try again.",
+  message: "Too many message actions. Please slow down and try again later.",
 });
 
 router.post("/conversations/:conversationId/messages", requireAuth, messageWriteRateLimit, create);

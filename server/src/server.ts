@@ -12,9 +12,6 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { validateSession } from "./services/session.service";
 import { setSocketIO, emitToUser } from "./socket";
-import { securityHeaders } from "./middleware/security-headers.middleware";
-import { errorHandler } from "./middleware/error-handler.middleware";
-import { logError } from "./logger";
 
 dotenv.config();
 
@@ -35,9 +32,6 @@ const corsOrigin =
     ? configuredCorsOrigins[0]
     : configuredCorsOrigins;
 
-app.disable("x-powered-by");
-app.use(securityHeaders);
-
 app.use(
   cors({
     origin: corsOrigin,
@@ -45,9 +39,13 @@ app.use(
   }),
 );
 
-app.use(express.json({
-  limit: "32kb",
-}));
+/*
+ * Keep request bodies bounded at the HTTP parser layer.
+ * Normal Chatter Box JSON requests are far smaller than this limit,
+ * while the message service separately enforces the 4000-character
+ * message-content limit.
+ */
+app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
@@ -72,7 +70,7 @@ app.get("/api/health/db", async (_req, res) => {
       database: "connected",
     });
   } catch (error) {
-    logError("Database health check failed", error);
+    console.error("Database health check failed:", error);
 
     res.status(500).json({
       status: "error",
@@ -121,7 +119,7 @@ io.use(async (socket, next) => {
     socket.data.userId = userId;
     next();
   } catch (error) {
-    logError("Socket authentication failed", error);
+    console.error("Socket authentication failed:", error);
     next(new Error("Authentication failed"));
   }
 });
@@ -205,7 +203,7 @@ io.on("connection", (socket) => {
         conversationId,
       });
     } catch (error) {
-      logError("Conversation join failed", error);
+      console.error("Conversation join failed:", error);
 
       callback?.({
         ok: false,
@@ -312,7 +310,7 @@ io.on("connection", (socket) => {
         messageId,
       });
     } catch (error) {
-      logError("Message read failed", error);
+      console.error("Message read failed:", error);
 
       callback?.({
         ok: false,
@@ -325,8 +323,6 @@ io.on("connection", (socket) => {
     // No presence/typing state is maintained by the server.
   });
 });
-
-app.use(errorHandler);
 
 httpServer.listen(PORT, HOST, () => {
   console.log(

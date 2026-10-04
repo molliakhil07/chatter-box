@@ -55,6 +55,7 @@ export function createRateLimiter(options: RateLimitOptions) {
       );
 
       res.setHeader("Retry-After", String(retryAfterSeconds));
+
       res.status(429).json({
         error: options.message ?? "Too many requests. Please try again later.",
       });

@@ -2,7 +2,11 @@ import { Router } from "express";
 import { prisma } from "../config/prisma";
 import { requireAuth } from "../middleware/auth.middleware";
 import { createRateLimiter } from "../middleware/rate-limit.middleware";
-import { login, logout, register } from "../controllers/auth.controller";
+import {
+  login,
+  logout,
+  register,
+} from "../controllers/auth.controller";
 
 const router = Router();
 

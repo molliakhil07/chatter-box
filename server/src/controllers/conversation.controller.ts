@@ -1,4 +1,3 @@
-import { logError } from "../logger";
 import type { Request, Response } from "express";
 import {
   createConversation,
@@ -72,7 +71,7 @@ export async function create(
 
     res.status(201).json({ conversation });
   } catch (error) {
-    logError("Conversation creation failed:", error);
+    console.error("Conversation creation failed:", error);
     res.status(500).json({
       error: "Unable to create conversation",
     });
@@ -97,7 +96,7 @@ export async function list(
 
     res.status(200).json({ conversations });
   } catch (error) {
-    logError("Conversation retrieval failed:", error);
+    console.error("Conversation retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve conversations",
     });
@@ -142,7 +141,7 @@ export async function getById(
 
     res.status(200).json({ conversation });
   } catch (error) {
-    logError("Conversation retrieval failed:", error);
+    console.error("Conversation retrieval failed:", error);
     res.status(500).json({
       error: "Unable to retrieve conversation",
     });
@@ -217,7 +216,7 @@ export async function removeMember(
 
     res.status(204).send();
   } catch (error) {
-    logError("Conversation member removal failed:", error);
+    console.error("Conversation member removal failed:", error);
     res.status(500).json({
       error: "Unable to remove conversation member",
     });

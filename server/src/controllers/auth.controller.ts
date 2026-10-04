@@ -1,4 +1,3 @@
-import { logError } from "../logger";
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
 
@@ -82,7 +81,7 @@ export async function register(
       return;
     }
 
-    logError("Registration failed:", error);
+    console.error("Registration failed:", error);
 
     res.status(500).json({
       error: "Unable to create account",
@@ -134,7 +133,7 @@ export async function login(
       expiresAt: session.expiresAt,
     });
   } catch (error) {
-    logError("Login failed:", error);
+    console.error("Login failed:", error);
 
     res.status(500).json({
       error: "Unable to log in",
@@ -178,7 +177,7 @@ export async function logout(
       message: "Logged out successfully",
     });
   } catch (error) {
-    logError("Logout failed:", error);
+    console.error("Logout failed:", error);
 
     res.status(500).json({
       error: "Unable to log out",
