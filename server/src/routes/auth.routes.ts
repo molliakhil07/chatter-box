@@ -3,10 +3,13 @@ import { prisma } from "../config/prisma";
 import { requireAuth } from "../middleware/auth.middleware";
 import { createRateLimiter } from "../middleware/rate-limit.middleware";
 import {
+  deleteAccount,
+  forgotPassword,
   login,
   logout,
   register,
   resendVerification,
+  resetPasswordWithToken,
   verifyEmail,
 } from "../controllers/auth.controller";
 import { updateUserProfile } from "../services/user.service";
@@ -41,6 +44,22 @@ router.post(
   login,
 );
 
+const passwordResetRequestRateLimit = createRateLimiter({
+  keyPrefix: "password-reset-request",
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message:
+    "Too many password reset requests. Please try again later.",
+});
+
+const passwordResetConfirmRateLimit = createRateLimiter({
+  keyPrefix: "password-reset-confirm",
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message:
+    "Too many password reset attempts. Please try again later.",
+});
+
 const verificationResendRateLimit = createRateLimiter({
   keyPrefix: "verification-resend",
   windowMs: 15 * 60 * 1000,
@@ -57,9 +76,28 @@ router.post(
 );
 
 router.post(
+  "/forgot-password",
+  passwordResetRequestRateLimit,
+  forgotPassword,
+);
+
+router.post(
+  "/reset-password",
+  passwordResetConfirmRateLimit,
+  resetPasswordWithToken,
+);
+
+
+router.post(
   "/logout",
   requireAuth,
   logout,
+);
+
+router.delete(
+  "/me",
+  requireAuth,
+  deleteAccount,
 );
 
 router.get("/me", requireAuth, async (req, res) => {

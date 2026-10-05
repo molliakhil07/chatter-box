@@ -19,6 +19,9 @@ import {
   updateMessage,
   verifyEmail,
   resendVerificationEmail,
+  requestPasswordReset,
+  resetPassword,
+  deleteCurrentUserAccount,
   type Conversation,
   type CurrentUser,
   type Message,
@@ -34,6 +37,8 @@ import {
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ??
   "http://localhost:5000/api";
+
+const CHATTER_BOX_VERSION = "1.0.0";
 
 const PASSWORD_PATTERN =
   /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
@@ -250,7 +255,7 @@ function App() {
     useState(false);
 
   const [authMode, setAuthMode] =
-    useState<"login" | "register">("login");
+    useState<"login" | "register" | "forgot" | "reset">("login");
 
   const [authIdentity, setAuthIdentity] =
     useState("");
@@ -282,6 +287,18 @@ function App() {
   const [verificationEmail, setVerificationEmail] =
     useState("");
 
+  const [forgotEmail, setForgotEmail] =
+    useState("");
+
+  const [resetToken, setResetToken] =
+    useState("");
+
+  const [resetPasswordValue, setResetPasswordValue] =
+    useState("");
+
+  const [resetPasswordConfirm, setResetPasswordConfirm] =
+    useState("");
+
   const [resendingVerification, setResendingVerification] =
     useState(false);
 
@@ -303,6 +320,10 @@ function App() {
   const [profileSaving, setProfileSaving] =
     useState(false);
   const [profileError, setProfileError] =
+    useState("");
+  const [deletingAccount, setDeletingAccount] =
+    useState(false);
+  const [deleteAccountError, setDeleteAccountError] =
     useState("");
 
   const [viewedUserProfileOpen, setViewedUserProfileOpen] =
@@ -562,18 +583,27 @@ function App() {
   }
 
   /*
-   * Consume email-verification links opened from the email.
-   * The backend never exposes the raw token after verification.
+   * Consume email-verification and password-reset links opened from email.
+   * Reset tokens are kept in component state and sessionStorage only for the active flow.
    */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("verify_email");
+    const verificationToken = params.get("verify_email");
+    const passwordResetTokenFromUrl = params.get("reset_password");
+    const passwordResetToken =
+      passwordResetTokenFromUrl ??
+      window.sessionStorage.getItem("chatterbox_reset_token");
 
-    if (!token) {
+    if (!verificationToken && !passwordResetToken) {
       return;
     }
 
-    const verifiedEmailToken = token;
+    if (passwordResetTokenFromUrl) {
+      window.sessionStorage.setItem(
+        "chatterbox_reset_token",
+        passwordResetTokenFromUrl,
+      );
+    }
 
     window.history.replaceState(
       {},
@@ -583,32 +613,48 @@ function App() {
 
     let cancelled = false;
 
-    async function completeEmailVerification() {
-      try {
-        await verifyEmail(verifiedEmailToken);
+    async function consumeAuthLink() {
+      if (verificationToken) {
+        try {
+          await verifyEmail(verificationToken);
 
-        if (!cancelled) {
-          setAuthMode("login");
-          setAuthFormError("");
-          setAuthFormSuccess(
-            "Email verified successfully. You can now sign in.",
-          );
-          setAuthError(true);
+          if (!cancelled) {
+            setAuthMode("login");
+            setAuthFormError("");
+            setAuthFormSuccess(
+              "Email verified successfully. You can now sign in.",
+            );
+            setAuthError(true);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setAuthFormSuccess("");
+            setAuthFormError(
+              error instanceof Error
+                ? error.message
+                : "Unable to verify email. Please try again.",
+            );
+            setAuthError(true);
+          }
         }
-      } catch (error) {
+
+        return;
+      }
+
+      if (passwordResetToken) {
         if (!cancelled) {
+          setResetToken(passwordResetToken);
+          setAuthMode("reset");
+          setAuthFormError("");
           setAuthFormSuccess("");
-          setAuthFormError(
-            error instanceof Error
-              ? error.message
-              : "Unable to verify email. Please try again.",
-          );
+          setResetPasswordValue("");
+          setResetPasswordConfirm("");
           setAuthError(true);
         }
       }
     }
 
-    completeEmailVerification();
+    consumeAuthLink();
 
     return () => {
       cancelled = true;
@@ -623,6 +669,18 @@ function App() {
    */
   useEffect(() => {
     async function restoreSession() {
+      const pendingPasswordReset =
+        window.sessionStorage.getItem(
+          "chatterbox_reset_token",
+        );
+
+      if (pendingPasswordReset) {
+        setUser(null);
+        setAuthError(true);
+        setAuthLoading(false);
+        return;
+      }
+
       try {
         const userResponse =
           await getCurrentUser();
@@ -1736,6 +1794,53 @@ function App() {
     }
   }
 
+  async function handleDeleteAccount() {
+    if (deletingAccount) return;
+
+    setDeletingAccount(true);
+    setDeleteAccountError("");
+
+    try {
+      await deleteCurrentUserAccount();
+
+      setUser(null);
+      setConversations([]);
+      setConversationError(false);
+      setSelectedConversationId(null);
+      setProfileOpen(false);
+      setProfileEditing(false);
+      setProfileError("");
+      setViewedUserProfile(null);
+      setViewedUserProfileError("");
+      setMessages([]);
+      setNextCursor(null);
+      setMessageStatuses({});
+      setReplyingToMessage(null);
+      setOpenMessageActionId(null);
+      setDeletingMessageId(null);
+      cancelEditingMessage();
+      setUnreadCounts({});
+      setEditingMessageId(null);
+      setEditingMessageContent("");
+      setMessageUpdateError("");
+      setConversationSearch("");
+      setAuthMode("login");
+      setAuthPassword("");
+      setAuthFormError("");
+      setAuthFormSuccess("Your account has been permanently deleted.");
+      setVerificationEmail("");
+      setAuthError(false);
+    } catch (error) {
+      setDeleteAccountError(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete account. Please try again.",
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   async function handleLogout() {
     try {
       await logout();
@@ -1769,6 +1874,10 @@ function App() {
       setAuthFormError("");
       setAuthFormSuccess("");
       setVerificationEmail("");
+      setForgotEmail("");
+      setResetToken("");
+      setResetPasswordValue("");
+      setResetPasswordConfirm("");
       setAuthError(false);
     }
   }
@@ -1802,6 +1911,61 @@ function App() {
         setAuthPassword("");
         setSelectedConversationId(null);
         setConversationSearch("");
+        return;
+      }
+
+      if (authMode === "forgot") {
+        const email = forgotEmail.trim().toLowerCase();
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(email)) {
+          setAuthFormError("Please enter a valid email address.");
+          return;
+        }
+
+        await requestPasswordReset(email);
+        setAuthFormSuccess(
+          "If an account exists for that email, a password reset link has been sent. Check your inbox.",
+        );
+        return;
+      }
+
+      if (authMode === "reset") {
+        if (!isStrongPassword(resetPasswordValue)) {
+          setAuthFormError(
+            "Password must be at least 8 characters and include at least one alphabet, one number, and one special character.",
+          );
+          return;
+        }
+
+        if (resetPasswordValue !== resetPasswordConfirm) {
+          setAuthFormError("Passwords do not match.");
+          return;
+        }
+
+        if (!resetToken) {
+          setAuthFormError(
+            "This password reset link is invalid or has expired.",
+          );
+          return;
+        }
+
+        await resetPassword(
+          resetToken,
+          resetPasswordValue,
+        );
+
+        setAuthMode("login");
+        setAuthIdentity("");
+        setAuthPassword("");
+        setForgotEmail("");
+        setResetToken("");
+        window.sessionStorage.removeItem("chatterbox_reset_token");
+        setResetPasswordValue("");
+        setResetPasswordConfirm("");
+        setAuthFormSuccess(
+          "Password reset successfully. You can now sign in with your new password.",
+        );
         return;
       }
 
@@ -2728,10 +2892,13 @@ function App() {
 
   if (authError || !user) {
     const isLogin = authMode === "login";
+    const isRegister = authMode === "register";
+    const isForgot = authMode === "forgot";
+    const isReset = authMode === "reset";
 
     return (
       <div className="auth-page">
-        <style>{`
+      <style>{`
           :root {
             --cb-auth-bg: #f7f8fa;
             --cb-auth-text: #151922;
@@ -2947,6 +3114,24 @@ function App() {
             opacity: 0.55;
           }
 
+          .auth-forgot-button {
+            margin: -12px 0 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: var(--cb-auth-text);
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: left;
+            cursor: pointer;
+          }
+
+          .auth-forgot-button:hover {
+            text-decoration: underline;
+            text-underline-offset: 3px;
+          }
+
           .auth-switch {
             margin: 8px 0 0;
             color: var(--cb-auth-muted);
@@ -3019,8 +3204,16 @@ function App() {
           <header className="auth-brand">
             <h1>ChatterBox</h1>
 
-            {!isLogin && (
+            {isRegister && (
               <p>Create your account.</p>
+            )}
+
+            {isForgot && (
+              <p>Reset your password.</p>
+            )}
+
+            {isReset && (
+              <p>Choose a new password.</p>
             )}
           </header>
 
@@ -3031,7 +3224,6 @@ function App() {
             {isLogin ? (
               <>
                 <div className="auth-field">
-                  
                   <input
                     id="auth-identity"
                     name="identity"
@@ -3051,7 +3243,6 @@ function App() {
                 </div>
 
                 <div className="auth-field">
-                
                   <input
                     id="auth-password"
                     name="password"
@@ -3066,8 +3257,28 @@ function App() {
                     required
                   />
                 </div>
+
+                <button
+                  type="button"
+                  className="auth-forgot-button"
+                  onClick={() => {
+                    const candidate = authIdentity.trim();
+                    setForgotEmail(
+                      candidate.includes("@")
+                        ? candidate.toLowerCase()
+                        : "",
+                    );
+                    setAuthMode("forgot");
+                    setAuthFormError("");
+                    setAuthFormSuccess("");
+                    setVerificationEmail("");
+                    setAuthPassword("");
+                  }}
+                >
+                  Forgot password?
+                </button>
               </>
-            ) : (
+            ) : isRegister ? (
               <>
                 <div className="auth-field">
                   <label htmlFor="auth-display-name">
@@ -3184,6 +3395,75 @@ function App() {
                   </p>
                 </div>
               </>
+            ) : isForgot ? (
+              <div className="auth-field">
+                <label htmlFor="auth-forgot-email">
+                  Email
+                </label>
+                <input
+                  id="auth-forgot-email"
+                  name="email"
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(event) => {
+                    setForgotEmail(event.target.value);
+                    setAuthFormError("");
+                    setAuthFormSuccess("");
+                  }}
+                  placeholder="Email address"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                />
+              </div>
+            ) : (
+              <>
+                <div className="auth-field">
+                  <label htmlFor="auth-reset-password">
+                    New password
+                  </label>
+                  <input
+                    id="auth-reset-password"
+                    name="password"
+                    type="password"
+                    value={resetPasswordValue}
+                    onChange={(event) => {
+                      setResetPasswordValue(event.target.value);
+                      setAuthFormError("");
+                    }}
+                    placeholder="New password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    pattern="(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
+                    title="Use at least 8 characters with at least one alphabet, one number, and one special character."
+                    required
+                  />
+                </div>
+
+                <div className="auth-field">
+                  <label htmlFor="auth-reset-password-confirm">
+                    Confirm password
+                  </label>
+                  <input
+                    id="auth-reset-password-confirm"
+                    name="passwordConfirm"
+                    type="password"
+                    value={resetPasswordConfirm}
+                    onChange={(event) => {
+                      setResetPasswordConfirm(event.target.value);
+                      setAuthFormError("");
+                    }}
+                    placeholder="Confirm new password"
+                    autoComplete="new-password"
+                    required
+                  />
+                  <p className="auth-password-hint">
+                    Minimum 8 characters with at least one alphabet, one number, and one special character.
+                  </p>
+                </div>
+              </>
             )}
 
             {authFormSuccess && (
@@ -3225,44 +3505,71 @@ function App() {
               {authSubmitting
                 ? isLogin
                   ? "Signing In..."
-                  : "Creating Account..."
+                  : isRegister
+                    ? "Creating Account..."
+                    : isForgot
+                      ? "Sending Reset Link..."
+                      : "Resetting Password..."
                 : isLogin
                   ? "Sign In"
-                  : "Create Account"}
+                  : isRegister
+                    ? "Create Account"
+                    : isForgot
+                      ? "Send Reset Link"
+                      : "Reset Password"}
             </button>
 
-            <p className="auth-switch">
-              {isLogin
-                ? "Don't have an account? "
-                : "Already have an account? "}
+            {!isLogin && (
+              <p className="auth-switch">
+                {isRegister
+                  ? "Already have an account? "
+                  : "Want to sign in? "}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode(
-                    isLogin ? "register" : "login",
-                  );
-                  setAuthFormError("");
-                  setAuthFormSuccess("");
-                  setVerificationEmail("");
-                  setAuthPassword("");
-                  if (isLogin) {
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("login");
+                    setAuthFormError("");
+                    setAuthFormSuccess("");
+                    setVerificationEmail("");
+                    setAuthPassword("");
+                    setResetToken("");
+                    window.sessionStorage.removeItem("chatterbox_reset_token");
+                    setResetPasswordValue("");
+                    setResetPasswordConfirm("");
+                    if (isRegister) {
+                      setAuthGender("");
+                    }
+                  }}
+                >
+                  Sign In
+                </button>
+              </p>
+            )}
+
+            {isLogin && (
+              <p className="auth-switch">
+                Don't have an account? {" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setAuthFormError("");
+                    setAuthFormSuccess("");
+                    setVerificationEmail("");
+                    setAuthPassword("");
                     setAuthGender("");
-                  }
-                }}
-              >
-                {isLogin
-                  ? "Create Account"
-                  : "Sign In"}
-              </button>
-            </p>
+                  }}
+                >
+                  Create Account
+                </button>
+              </p>
+            )}
           </form>
         </main>
       </div>
     );
   }
-
-
 
   if (profileOpen) {
     const profileDisplayName =
@@ -3467,6 +3774,41 @@ function App() {
               >
                 Log out
               </button>
+
+              <div className="profile-delete-account-wrap">
+                {deleteAccountError && (
+                  <div
+                    className="profile-error"
+                    role="alert"
+                  >
+                    {deleteAccountError}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="profile-delete-account-button"
+                  onClick={() => {
+                    if (deletingAccount) {
+                      return;
+                    }
+
+                    const confirmed = window.confirm(
+                      "Delete your Chatter Box account permanently?\n\nThis permanently deletes your account, conversations, messages, profile data, and active sessions. This action cannot be undone.",
+                    );
+
+                    if (!confirmed) {
+                      return;
+                    }
+
+                    setDeleteAccountError("");
+                    void handleDeleteAccount();
+                  }}
+                  disabled={deletingAccount}
+                >
+                  Delete account permanently
+                </button>
+              </div>
             </div>
           </section>
         </main>
@@ -4435,6 +4777,38 @@ function App() {
 
         .profile-logout-button:hover {
           background: rgba(200, 77, 77, 0.045);
+        }
+
+        .app-version-footer {
+          flex: 0 0 auto;
+          padding: 9px 16px 0;
+          color: var(--cb-text-muted);
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-align: center;
+        }
+
+        .profile-delete-account-button {
+          width: 100%;
+          min-height: 48px;
+          padding: 0 18px;
+          border: 1px solid rgba(200, 77, 77, 0.24);
+          border-radius: 11px;
+          background: #ffffff;
+          color: #b83f3f;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .profile-delete-account-button:hover:not(:disabled) {
+          background: rgba(200, 77, 77, 0.055);
+        }
+
+        .profile-delete-account-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
         }
 
         .messenger-layout {
@@ -7491,6 +7865,10 @@ function App() {
           )}
         </section>
       </main>
+
+      <footer className="app-version-footer">
+        Chatter Box v{CHATTER_BOX_VERSION}
+      </footer>
 
       {deleteConversationConfirmOpen && (
         <div

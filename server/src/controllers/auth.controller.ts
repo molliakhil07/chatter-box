@@ -12,6 +12,10 @@ import {
   authenticateUser,
   createSession,
 } from "../services/session.service";
+import {
+  requestPasswordReset,
+  resetPassword,
+} from "../services/password-reset.service";
 
 export async function register(
   req: Request,
@@ -311,6 +315,167 @@ export async function resendVerification(
     res.status(503).json({
       error:
         "Unable to send the verification email. Please try again later.",
+    });
+  }
+}
+
+export async function forgotPassword(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const normalizedEmail =
+    typeof req.body?.email === "string"
+      ? req.body.email.trim().toLowerCase()
+      : "";
+
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailPattern.test(normalizedEmail)) {
+    res.status(400).json({
+      error: "Invalid email address",
+    });
+    return;
+  }
+
+  try {
+    await requestPasswordReset(normalizedEmail);
+  } catch (error) {
+    console.error("Password reset request failed:", error);
+
+    /*
+     * Do not reveal whether an account exists. The frontend receives the
+     * same successful response for existing and non-existing accounts.
+     */
+  }
+
+  res.status(200).json({
+    message:
+      "If an account exists for that email, a password reset link has been sent.",
+  });
+}
+
+export async function resetPasswordWithToken(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const token =
+    typeof req.body?.token === "string"
+      ? req.body.token.trim()
+      : "";
+
+  const password =
+    typeof req.body?.password === "string"
+      ? req.body.password
+      : "";
+
+  if (!token) {
+    res.status(400).json({
+      error: "Password reset token is required",
+    });
+    return;
+  }
+
+  const passwordPattern =
+    /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+  if (!passwordPattern.test(password)) {
+    res.status(400).json({
+      error:
+        "Password must be at least 8 characters and include at least one alphabet, one number, and one special character",
+    });
+    return;
+  }
+
+  try {
+    const reset = await resetPassword(token, password);
+
+    if (!reset) {
+      res.status(400).json({
+        error:
+          "This password reset link is invalid or has expired.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Password reset successfully.",
+    });
+  } catch (error) {
+    console.error("Password reset failed:", error);
+
+    res.status(500).json({
+      error: "Unable to reset password. Please try again.",
+    });
+  }
+}
+
+export async function deleteAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const userId = req.userId;
+
+    if (!userId) {
+      res.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    /*
+     * These token tables are intentionally handled here because the
+     * email-verification table is maintained outside Prisma's current
+     * schema file. The password-reset table is also created at runtime.
+     */
+    await prisma.$executeRaw`
+      DELETE FROM "EmailVerificationToken"
+      WHERE "userId" = ${userId}
+    `;
+
+    try {
+      await prisma.$executeRaw`
+        DELETE FROM "PasswordResetToken"
+        WHERE "userId" = ${userId}
+      `;
+    } catch (passwordResetTableError) {
+      /*
+       * The reset-token table is created lazily by the forgot-password
+       * flow, so it may not exist yet for an older deployment.
+       */
+      console.warn(
+        "Password reset token cleanup skipped:",
+        passwordResetTableError,
+      );
+    }
+
+    /*
+     * User relations in the current Prisma schema use cascading deletes
+     * for memberships, messages, message requests, and sessions.
+     */
+    await prisma.user.delete({
+      where: {
+        id: userId,
+      },
+    });
+
+    const isProduction =
+      process.env.NODE_ENV === "production";
+
+    res.clearCookie("session_token", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+    });
+
+    res.status(200).json({
+      message: "Account deleted permanently.",
+    });
+  } catch (error) {
+    console.error("Account deletion failed:", error);
+
+    res.status(500).json({
+      error: "Unable to delete account. Please try again.",
     });
   }
 }

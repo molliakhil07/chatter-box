@@ -130,6 +130,77 @@ export async function resendVerificationEmail(
   }
 }
 
+export async function requestPasswordReset(
+  email: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/forgot-password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to process password reset request",
+    );
+  }
+}
+
+export async function resetPassword(
+  token: string,
+  password: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/reset-password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token, password }),
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to reset password",
+    );
+  }
+}
+
+export async function deleteCurrentUserAccount(): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/me`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to delete account",
+    );
+  }
+}
+
 export async function updateCurrentUserProfile(input: {
   displayName?: string | null;
   bio?: string | null;
