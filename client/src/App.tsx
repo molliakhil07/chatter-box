@@ -3198,6 +3198,58 @@ function App() {
               font-size: 15px;
             }
           }
+        @media (min-width: 761px) {
+          .profile-content {
+            width: min(760px, calc(100% - 44px));
+            box-sizing: border-box;
+          }
+
+          .profile-card {
+            width: 100%;
+            max-width: none;
+            box-sizing: border-box;
+          }
+
+          .profile-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            flex-wrap: nowrap;
+            box-sizing: border-box;
+          }
+
+          .profile-actions .profile-save-button {
+            width: auto;
+            min-width: 130px;
+            flex: 0 0 130px;
+          }
+
+          .profile-actions .profile-cancel-button {
+            width: auto;
+            min-width: 90px;
+            flex: 0 0 90px;
+          }
+
+          .profile-actions .profile-logout-button {
+            width: auto;
+            min-width: 110px;
+            flex: 0 0 110px;
+          }
+
+          .profile-actions .profile-delete-account-wrap {
+            width: auto;
+            min-width: 170px;
+            flex: 1 1 170px;
+          }
+
+          .profile-actions .profile-delete-account-button {
+            width: 100%;
+            min-width: 170px;
+            box-sizing: border-box;
+          }
+        }
+
         `}</style>
 
         <main className="auth-shell">
