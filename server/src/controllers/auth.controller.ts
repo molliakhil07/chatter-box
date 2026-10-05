@@ -4,6 +4,11 @@ import type { Request, Response } from "express";
 import { prisma } from "../config/prisma";
 import { registerUser } from "../services/user.service";
 import {
+  createAndSendVerificationEmail,
+  resendVerificationEmail,
+  verifyEmailToken,
+} from "../services/email-verification.service";
+import {
   authenticateUser,
   createSession,
 } from "../services/session.service";
@@ -46,10 +51,13 @@ export async function register(
       return;
     }
 
-    if (password.length < 8) {
+    const passwordPattern =
+      /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+    if (!passwordPattern.test(password)) {
       res.status(400).json({
         error:
-          "Password must be at least 8 characters long",
+          "Password must be at least 8 characters and include at least one alphabet, one number, and one special character",
       });
       return;
     }
@@ -103,8 +111,25 @@ export async function register(
       gender,
     });
 
+    try {
+      await createAndSendVerificationEmail(user.id);
+    } catch (emailError) {
+      console.error("Verification email sending failed:", emailError);
+
+      await prisma.user.delete({
+        where: { id: user.id },
+      });
+
+      res.status(503).json({
+        error:
+          "Unable to send the verification email. Please try again later.",
+      });
+      return;
+    }
+
     res.status(201).json({
-      user,
+      verificationRequired: true,
+      email: user.email,
     });
   } catch (error) {
     if (
@@ -168,6 +193,25 @@ export async function login(
       return;
     }
 
+    const verificationRows = await prisma.$queryRaw<
+      Array<{ emailVerified: boolean }>
+    >`
+      SELECT "emailVerified"
+      FROM "User"
+      WHERE "id" = ${user.id}
+      LIMIT 1
+    `;
+
+    const verificationState = verificationRows[0];
+
+    if (!verificationState?.emailVerified) {
+      res.status(403).json({
+        error:
+          "Please verify your email address before signing in.",
+      });
+      return;
+    }
+
     const session = await createSession(user.id);
 
     const isProduction =
@@ -190,6 +234,83 @@ export async function login(
 
     res.status(500).json({
       error: "Unable to log in",
+    });
+  }
+}
+
+export async function verifyEmail(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const token =
+      typeof req.query.token === "string"
+        ? req.query.token.trim()
+        : "";
+
+    if (!token) {
+      res.status(400).json({
+        error: "Verification token is required",
+      });
+      return;
+    }
+
+    const verified = await verifyEmailToken(token);
+
+    if (!verified) {
+      res.status(400).json({
+        error:
+          "This verification link is invalid or has expired.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Email verified successfully.",
+    });
+  } catch (error) {
+    console.error("Email verification failed:", error);
+    res.status(500).json({
+      error: "Unable to verify email. Please try again.",
+    });
+  }
+}
+
+export async function resendVerification(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const { email } = req.body;
+
+    if (typeof email !== "string" || email.trim().length === 0) {
+      res.status(400).json({
+        error: "Email is required",
+      });
+      return;
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!emailPattern.test(normalizedEmail)) {
+      res.status(400).json({
+        error: "Invalid email address",
+      });
+      return;
+    }
+
+    await resendVerificationEmail(normalizedEmail);
+
+    res.status(200).json({
+      message:
+        "If an unverified account exists for that email, a verification email has been sent.",
+    });
+  } catch (error) {
+    console.error("Verification email resend failed:", error);
+    res.status(503).json({
+      error:
+        "Unable to send the verification email. Please try again later.",
     });
   }
 }

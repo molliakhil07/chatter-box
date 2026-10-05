@@ -6,6 +6,8 @@ import {
   login,
   logout,
   register,
+  resendVerification,
+  verifyEmail,
 } from "../controllers/auth.controller";
 import { updateUserProfile } from "../services/user.service";
 
@@ -37,6 +39,21 @@ router.post(
   "/login",
   authAttemptRateLimit,
   login,
+);
+
+const verificationResendRateLimit = createRateLimiter({
+  keyPrefix: "verification-resend",
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message:
+    "Too many verification email requests. Please try again later.",
+});
+
+router.get("/verify-email", verifyEmail);
+router.post(
+  "/resend-verification",
+  verificationResendRateLimit,
+  resendVerification,
 );
 
 router.post(

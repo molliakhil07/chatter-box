@@ -55,7 +55,7 @@ export async function registerAccount(input: {
   password: string;
   displayName: string;
   gender: "MALE" | "FEMALE";
-}): Promise<void> {
+}): Promise<{ verificationRequired: boolean; email: string }> {
   const response = await fetch(
     `${API_BASE_URL}/auth/register`,
     {
@@ -75,6 +75,57 @@ export async function registerAccount(input: {
       typeof body?.error === "string"
         ? body.error
         : "Unable to create account",
+    );
+  }
+
+  return {
+    verificationRequired: body?.verificationRequired === true,
+    email:
+      typeof body?.email === "string"
+        ? body.email
+        : input.email,
+  };
+}
+
+export async function verifyEmail(
+  token: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/verify-email?token=${encodeURIComponent(token)}`,
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to verify email",
+    );
+  }
+}
+
+export async function resendVerificationEmail(
+  email: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/resend-verification`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    },
+  );
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Unable to resend verification email",
     );
   }
 }

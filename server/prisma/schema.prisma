@@ -14,10 +14,10 @@ model User {
   passwordHash            String
   displayName             String?
   avatarUrl               String?
-  gender                  Gender?
-  bio                     String?
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
+  bio                     String?
+  gender                  Gender?
   members                 ConversationMember[]
   messages                Message[]
   receivedMessageRequests MessageRequest[]     @relation("ReceivedMessageRequests")
@@ -96,7 +96,7 @@ model MessageRequest {
   acceptedSeenAt DateTime?
   receiver       User                 @relation("ReceivedMessageRequests", fields: [receiverId], references: [id], onDelete: Cascade)
   sender         User                 @relation("SentMessageRequests", fields: [senderId], references: [id], onDelete: Cascade)
-  
+
   @@unique([senderId, receiverId])
   @@index([receiverId, status])
   @@index([senderId, status])

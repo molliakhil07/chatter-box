@@ -17,6 +17,8 @@ import {
   deleteConversation,
   sendConversationMessage,
   updateMessage,
+  verifyEmail,
+  resendVerificationEmail,
   type Conversation,
   type CurrentUser,
   type Message,
@@ -32,6 +34,13 @@ import {
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ??
   "http://localhost:5000/api";
+
+const PASSWORD_PATTERN =
+  /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+function isStrongPassword(password: string): boolean {
+  return PASSWORD_PATTERN.test(password);
+}
 
 type MessageStatus =
   | "sent"
@@ -266,6 +275,15 @@ function App() {
 
   const [authFormError, setAuthFormError] =
     useState("");
+
+  const [authFormSuccess, setAuthFormSuccess] =
+    useState("");
+
+  const [verificationEmail, setVerificationEmail] =
+    useState("");
+
+  const [resendingVerification, setResendingVerification] =
+    useState(false);
 
   const [conversationError, setConversationError] =
     useState(false);
@@ -542,6 +560,60 @@ function App() {
       );
     });
   }
+
+  /*
+   * Consume email-verification links opened from the email.
+   * The backend never exposes the raw token after verification.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("verify_email");
+
+    if (!token) {
+      return;
+    }
+
+    const verifiedEmailToken = token;
+
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname + window.location.hash,
+    );
+
+    let cancelled = false;
+
+    async function completeEmailVerification() {
+      try {
+        await verifyEmail(verifiedEmailToken);
+
+        if (!cancelled) {
+          setAuthMode("login");
+          setAuthFormError("");
+          setAuthFormSuccess(
+            "Email verified successfully. You can now sign in.",
+          );
+          setAuthError(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthFormSuccess("");
+          setAuthFormError(
+            error instanceof Error
+              ? error.message
+              : "Unable to verify email. Please try again.",
+          );
+          setAuthError(true);
+        }
+      }
+    }
+
+    completeEmailVerification();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /*
    * Restore the existing authenticated session.
@@ -1046,31 +1118,9 @@ function App() {
         const loadedMessages =
           [...response.items].reverse();
 
-        /*
-         * Keep any realtime messages that arrived while the REST
-         * request was in flight. This is especially important for
-         * replies: the realtime event can arrive before the initial
-         * message load finishes, and replacing state wholesale here
-         * would otherwise make that message disappear until refresh.
-         */
-        setMessages((currentMessages) => {
-          const loadedMessageIds = new Set(
-            loadedMessages.map((message) => message.id),
-          );
-
-          const realtimeMessages = currentMessages.filter(
-            (message) => !loadedMessageIds.has(message.id),
-          );
-
-          return [
-            ...loadedMessages,
-            ...realtimeMessages,
-          ].sort(
-            (first, second) =>
-              new Date(first.createdAt).getTime() -
-              new Date(second.createdAt).getTime(),
-          );
-        });
+        setMessages(
+          loadedMessages,
+        );
 
         /*
          * Restore persisted read state from the
@@ -1717,6 +1767,8 @@ function App() {
       setAuthMode("login");
       setAuthPassword("");
       setAuthFormError("");
+      setAuthFormSuccess("");
+      setVerificationEmail("");
       setAuthError(false);
     }
   }
@@ -1731,6 +1783,7 @@ function App() {
     }
 
     setAuthFormError("");
+    setAuthFormSuccess("");
     setAuthSubmitting(true);
 
     try {
@@ -1744,6 +1797,8 @@ function App() {
 
         setUser(currentUser.user);
         setAuthError(false);
+        setAuthFormSuccess("");
+        setVerificationEmail("");
         setAuthPassword("");
         setSelectedConversationId(null);
         setConversationSearch("");
@@ -1755,7 +1810,14 @@ function App() {
         return;
       }
 
-      await registerAccount({
+      if (!isStrongPassword(authPassword)) {
+        setAuthFormError(
+          "Password must be at least 8 characters and include at least one alphabet, one number, and one special character.",
+        );
+        return;
+      }
+
+      const registration = await registerAccount({
         email: authEmail.trim(),
         username: authUsername.trim().replace(/^@/, ""),
         password: authPassword,
@@ -1763,38 +1825,59 @@ function App() {
         gender: authGender,
       });
 
-      /*
-       * Registration and authentication are separate
-       * API operations in the project contract.
-       * If registration also establishes a session,
-       * continue directly; otherwise switch to login.
-       */
-      try {
-        const currentUser =
-          await getCurrentUser();
-
-        setUser(currentUser.user);
-        setAuthError(false);
-        setAuthPassword("");
-        setSelectedConversationId(null);
-        setConversationSearch("");
-        return;
-      } catch {
-        setAuthMode("login");
-        setAuthIdentity(authUsername.trim().replace(/^@/, ""));
-        setAuthPassword("");
-        setAuthFormError(
-          "Account created. Sign in to continue.",
-        );
-      }
+      setAuthMode("login");
+      setAuthIdentity(authEmail.trim());
+      setAuthPassword("");
+      setVerificationEmail(registration.email);
+      setAuthFormSuccess(
+        `Account created. We sent a verification link to ${registration.email}. Verify your email before signing in.`,
+      );
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to complete authentication. Please try again.";
+
+      setAuthFormError(message);
+
+      if (
+        authMode === "login" &&
+        message.toLowerCase().includes("verify your email")
+      ) {
+        const candidate = authIdentity.trim();
+        if (candidate.includes("@")) {
+          setVerificationEmail(candidate.toLowerCase());
+        }
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    const email = verificationEmail.trim();
+
+    if (!email || resendingVerification) {
+      return;
+    }
+
+    setResendingVerification(true);
+    setAuthFormError("");
+
+    try {
+      await resendVerificationEmail(email);
+      setAuthFormSuccess(
+        `If an unverified account exists for ${email}, a new verification email has been sent.`,
+      );
+    } catch (error) {
+      setAuthFormSuccess("");
       setAuthFormError(
         error instanceof Error
           ? error.message
-          : "Unable to complete authentication. Please try again.",
+          : "Unable to resend verification email. Please try again.",
       );
     } finally {
-      setAuthSubmitting(false);
+      setResendingVerification(false);
     }
   }
 
@@ -2793,6 +2876,47 @@ function App() {
             line-height: 1.45;
           }
 
+          .auth-success {
+            margin-top: -8px;
+            padding: 12px 14px;
+            border: 1px solid rgba(45, 125, 75, 0.16);
+            border-radius: 12px;
+            background: rgba(45, 125, 75, 0.06);
+            color: #2d7d4b;
+            font-size: 13px;
+            line-height: 1.45;
+          }
+
+          .auth-password-hint {
+            margin: -2px 0 0;
+            color: #747b87;
+            font-size: 12px;
+            line-height: 1.5;
+          }
+
+          .auth-resend-button {
+            margin: -8px 0 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: var(--cb-auth-text);
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: left;
+            cursor: pointer;
+          }
+
+          .auth-resend-button:hover:not(:disabled) {
+            text-decoration: underline;
+            text-underline-offset: 3px;
+          }
+
+          .auth-resend-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+          }
+
           .auth-submit {
             width: 100%;
             min-height: 66px;
@@ -3051,10 +3175,24 @@ function App() {
                     placeholder="Create a password"
                     autoComplete="new-password"
                     minLength={8}
+                    pattern="(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
+                    title="Use at least 8 characters with at least one alphabet, one number, and one special character."
                     required
                   />
+                  <p className="auth-password-hint">
+                    Minimum 8 characters with at least one alphabet, one number, and one special character.
+                  </p>
                 </div>
               </>
+            )}
+
+            {authFormSuccess && (
+              <div
+                className="auth-success"
+                role="status"
+              >
+                {authFormSuccess}
+              </div>
             )}
 
             {authFormError && (
@@ -3064,6 +3202,19 @@ function App() {
               >
                 {authFormError}
               </div>
+            )}
+
+            {isLogin && verificationEmail && (
+              <button
+                type="button"
+                className="auth-resend-button"
+                onClick={handleResendVerification}
+                disabled={resendingVerification}
+              >
+                {resendingVerification
+                  ? "Sending verification email..."
+                  : "Resend verification email"}
+              </button>
             )}
 
             <button
@@ -3092,6 +3243,8 @@ function App() {
                     isLogin ? "register" : "login",
                   );
                   setAuthFormError("");
+                  setAuthFormSuccess("");
+                  setVerificationEmail("");
                   setAuthPassword("");
                   if (isLogin) {
                     setAuthGender("");
