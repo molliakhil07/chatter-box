@@ -2701,3 +2701,72 @@ a:visited {
     font-size: 13px;
   }
 }
+/* =========================================================
+   PROFILE CARD — DESKTOP LAYOUT FIX
+   IMPORTANT: DESKTOP ONLY
+   ========================================================= */
+
+@media (min-width: 761px) {
+
+  /* Give the profile card enough horizontal space */
+  .profile-card {
+    width: 640px;
+    max-width: calc(100vw - 48px);
+    box-sizing: border-box;
+  }
+
+  /* Keep all desktop action buttons in one clean row */
+  .profile-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    width: 100%;
+    flex-wrap: nowrap;
+    box-sizing: border-box;
+  }
+
+  /* Save */
+  .profile-save-button {
+    flex: 0 0 130px;
+    width: 130px;
+    min-width: 130px;
+    height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Cancel */
+  .profile-cancel-button {
+    flex: 0 0 90px;
+    width: 90px;
+    min-width: 90px;
+    height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Log out */
+  .profile-logout-button {
+    flex: 0 0 100px;
+    width: 100px;
+    min-width: 100px;
+    height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Delete account wrapper must participate correctly
+     in the desktop flex row */
+  .profile-delete-account-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+  }
+
+  /* Delete account */
+  .profile-delete-account-button {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 170px;
+    height: 44px;
+    box-sizing: border-box;
+  }
+}
