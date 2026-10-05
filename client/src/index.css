@@ -1973,78 +1973,168 @@ a:visited {
 }
 
 /* =========================================================
-   AVATAR FIX
-   Prevent built-in gender avatars from stretching
+   CONVERSATION AVATAR
+   Fixed-size avatar — must never expand
    ========================================================= */
 
-.conversation-avatar,
-.chat-header-avatar,
-.profile-avatar {
-  flex: 0 0 auto;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border-radius: 50%;
-}
-
-/* Conversation-list avatar */
 .conversation-avatar {
+  flex: 0 0 62px;
   width: 62px;
-  height: 62px;
   min-width: 62px;
+  max-width: 62px;
+  height: 62px;
   min-height: 62px;
+  max-height: 62px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+
+  border: 1px solid rgba(24, 39, 58, 0.08);
+  border-radius: 50%;
+
+  background: #eef2f7;
+  color: var(--cb-text-soft);
+
+  font-size: 19px;
+  font-weight: 700;
 }
 
-/* Chat-header avatar */
-.chat-header-avatar {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  min-height: 42px;
-}
-
-/* Profile avatar */
-.profile-avatar {
-  width: 76px;
-  height: 76px;
-  min-width: 76px;
-  min-height: 76px;
-}
-
-/* IMPORTANT:
-   Keep the actual avatar image inside the circular container.
-*/
-.conversation-avatar img,
-.chat-header-avatar img,
-.profile-avatar img {
+/* The image itself can NEVER change the avatar size */
+.conversation-avatar img {
   display: block;
+
   width: 100%;
   height: 100%;
+
   min-width: 0;
   min-height: 0;
   max-width: 100%;
   max-height: 100%;
+
   object-fit: contain;
   object-position: center;
+
+  border-radius: 50%;
+}
+
+
+/* =========================================================
+   CHAT PROFILE TRIGGER
+   This is a separate element.
+   It MUST NOT share the avatar's flex rules.
+   ========================================================= */
+
+.chat-profile-trigger {
+  min-width: 0;
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  flex: 1 1 auto;
+
+  padding: 0;
+  border: 0;
+
+  background: transparent;
+  color: inherit;
+
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-profile-trigger:focus-visible {
+  outline: 2px solid rgba(47, 114, 232, 0.45);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+
+/* =========================================================
+   CHAT HEADER AVATAR
+   Fixed size
+   ========================================================= */
+
+.chat-header-avatar {
+  flex: 0 0 42px;
+
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+
+  border: 1px solid rgba(24, 39, 58, 0.08);
+  border-radius: 50%;
+
+  background: #e9eef6;
+  color: var(--cb-text-soft);
+
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chat-header-avatar img {
+  display: block;
+
+  width: 100%;
+  height: 100%;
+
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+
+  object-fit: contain;
+  object-position: center;
+
   border-radius: 50%;
 }
 
 /* Mobile conversation-list avatar */
 @media (max-width: 760px) {
   .conversation-avatar {
+    flex: 0 0 62px;
+
     width: 62px;
-    height: 62px;
     min-width: 62px;
+    max-width: 62px;
+
+    height: 62px;
     min-height: 62px;
+    max-height: 62px;
+
     aspect-ratio: 1 / 1;
     border-radius: 50%;
   }
 
   .conversation-avatar img {
+    display: block;
+
     width: 100%;
     height: 100%;
-    aspect-ratio: 1 / 1;
-    object-fit: cover;
+
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+
+    object-fit: contain;
     object-position: center;
+
     border-radius: 50%;
   }
 }
