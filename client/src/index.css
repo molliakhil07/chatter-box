@@ -2348,21 +2348,17 @@ a:visited {
   outline-offset: 3px;
 }
 
-
 /* =========================================================
-   DELETE ACCOUNT BUTTON
+   DELETE ACCOUNT BUTTON — PERMANENT UI FIX
    ========================================================= */
 
-.delete-account-button {
+.profile-delete-account-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
-  flex: 0 0 auto;
-
   width: 170px;
   min-width: 170px;
-
   height: 44px;
 
   padding: 0 14px;
@@ -2397,25 +2393,54 @@ a:visited {
     transform 0.15s ease;
 }
 
-.delete-account-button:hover {
+.profile-delete-account-button:hover:not(:disabled) {
   background: #f4f4f4;
   border-color: #bdbdbd;
 }
 
-.delete-account-button:active {
+.profile-delete-account-button:active:not(:disabled) {
   background: #eaeaea;
   transform: scale(0.98);
 }
 
-.delete-account-button:focus {
+.profile-delete-account-button:focus {
   outline: none;
 }
 
-.delete-account-button:focus-visible {
+.profile-delete-account-button:focus-visible {
   outline: 2px solid #111111;
   outline-offset: 3px;
 }
 
+.profile-delete-account-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+
+/* =========================================================
+   DELETE ACCOUNT — MOBILE
+   ========================================================= */
+
+@media (max-width: 760px) {
+  .profile-delete-account-button {
+    width: auto;
+    min-width: 170px;
+    height: 44px;
+
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .profile-delete-account-button {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+
+    white-space: nowrap;
+  }
+}
 
 /* =========================================================
    SAVE CHANGES BUTTON

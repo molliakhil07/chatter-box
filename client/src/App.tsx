@@ -3572,7 +3572,7 @@ function App() {
   }
 
   if (profileOpen) {
-    const profileDisplayName =
+    const profileName =
       user.displayName || user.username;
 
     return (
@@ -3605,17 +3605,17 @@ function App() {
                 {user.avatarUrl ? (
                   <img
                     src={user.avatarUrl}
-                    alt={`${profileDisplayName} avatar`}
+                    alt={`${profileName} avatar`}
                   />
                 ) : (
-                  profileDisplayName
+                  profileName
                     .charAt(0)
                     .toUpperCase()
                 )}
               </div>
 
               <div className="profile-name">
-                <h2>{profileDisplayName}</h2>
+                <h2>{profileName}</h2>
                 <p>@{user.username}</p>
               </div>
             </div>
@@ -3649,7 +3649,7 @@ function App() {
                   />
                 ) : (
                   <span className="profile-detail-value">
-                    {profileDisplayName}
+                    {profileName}
                   </span>
                 )}
               </div>
