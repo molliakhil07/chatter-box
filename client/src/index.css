@@ -2138,3 +2138,239 @@ a:visited {
     border-radius: 50%;
   }
 }
+/* =========================================================
+   PROFILE EDIT BUTTON — PERMANENT UI FIX
+   ========================================================= */
+
+.profile-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 42px;
+  height: 42px;
+
+  padding: 0;
+  margin: 0;
+
+  border: 1px solid #d6d6d6;
+  border-radius: 50%;
+
+  background: #ffffff;
+  color: #111111;
+
+  cursor: pointer;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  box-shadow: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.profile-card {
+  position: relative; /* establishes positioning context */
+  width: 400px;       /* or your card’s actual width */
+  margin: auto;       /* keeps it centered */
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.profile-edit-button {
+  position: absolute;
+  top: 15px;          /* adjust as needed */
+  right: 15px;        /* adjust as needed */
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+
+
+.profile-edit-button:hover {
+  background: #f3f3f3;
+  border-color: #bdbdbd;
+}
+
+.profile-edit-button:active {
+  background: #e9e9e9;
+  transform: scale(0.96);
+}
+
+.profile-edit-button:focus {
+  outline: none;
+}
+
+.profile-edit-button:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+/* Pen icon */
+.profile-edit-button svg {
+  width: 19px;
+  height: 19px;
+
+  display: block;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* =========================================================
+   PROFILE ACTION BUTTONS
+   ========================================================= */
+
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 22px;
+}
+
+/* Save Changes */
+.profile-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: auto;
+  min-width: 130px;
+  height: 44px;
+
+  padding: 0 20px;
+  margin: 0;
+
+  border: 1px solid #111111;
+  border-radius: 10px;
+
+  background: #111111;
+  color: #ffffff;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+
+  cursor: pointer;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  box-shadow: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.profile-save-button:hover:not(:disabled) {
+  background: #2b2b2b;
+  border-color: #2b2b2b;
+}
+
+.profile-save-button:active:not(:disabled) {
+  background: #000000;
+  transform: scale(0.98);
+}
+
+.profile-save-button:focus {
+  outline: none;
+}
+
+.profile-save-button:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+
+/* Cancel */
+.profile-cancel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: auto;
+  min-width: 90px;
+  height: 44px;
+
+  padding: 0 20px;
+  margin: 0;
+
+  border: 1px solid #d1d1d1;
+  border-radius: 10px;
+
+  background: #ffffff;
+  color: #222222;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+
+  cursor: pointer;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  box-shadow: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.profile-cancel-button:hover:not(:disabled) {
+  background: #f4f4f4;
+  border-color: #bdbdbd;
+}
+
+.profile-cancel-button:active:not(:disabled) {
+  background: #eaeaea;
+  transform: scale(0.98);
+}
+
+.profile-cancel-button:focus {
+  outline: none;
+}
+
+.profile-cancel-button:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+
+/* Disabled state */
+.profile-save-button:disabled,
+.profile-cancel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+
+/* =========================================================
+   PROFILE ACTIONS — MOBILE
+   ========================================================= */
+
+@media (max-width: 760px) {
+  .profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .profile-save-button,
+  .profile-cancel-button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
