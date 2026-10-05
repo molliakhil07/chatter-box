@@ -4609,12 +4609,15 @@ function App() {
         }
 
         .profile-content {
-          width: min(760px, calc(100% - 44px));
+          width: min(820px, calc(100% - 48px));
+          box-sizing: border-box;
           margin: 20px auto 40px;
           overflow-y: auto;
         }
 
         .profile-card {
+          width: 100%;
+          box-sizing: border-box;
           padding: 30px;
           border: 1px solid var(--cb-border);
           border-radius: var(--cb-radius-xl);
@@ -4757,13 +4760,25 @@ function App() {
         }
 
         .profile-actions {
-          display: grid;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
           gap: 10px;
           padding-top: 22px;
         }
 
+        .profile-actions .profile-edit-button,
+        .profile-actions .profile-save-button,
+        .profile-actions .profile-cancel-button {
+          width: auto;
+          flex: 1 1 150px;
+          min-width: 0;
+        }
+
         .profile-logout-button {
-          width: 100%;
+          width: auto;
+          flex: 0 1 140px;
+          min-width: 120px;
           min-height: 48px;
           padding: 0 18px;
           border: 1px solid rgba(200, 77, 77, 0.24);
@@ -4787,6 +4802,11 @@ function App() {
           font-weight: 600;
           letter-spacing: 0.04em;
           text-align: center;
+        }
+
+        .profile-delete-account-wrap {
+          flex: 1 1 220px;
+          min-width: 0;
         }
 
         .profile-delete-account-button {
@@ -6225,9 +6245,25 @@ function App() {
           }
 
           .profile-card {
+            width: 100%;
             padding: 22px;
             border-radius: 18px;
             box-shadow: none;
+          }
+
+          .profile-actions {
+            display: grid;
+            gap: 10px;
+          }
+
+          .profile-actions .profile-edit-button,
+          .profile-actions .profile-save-button,
+          .profile-actions .profile-cancel-button,
+          .profile-logout-button,
+          .profile-delete-account-wrap {
+            width: 100%;
+            min-width: 0;
+            flex: none;
           }
 
           .profile-identity {
