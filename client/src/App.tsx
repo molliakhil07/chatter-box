@@ -1046,9 +1046,31 @@ function App() {
         const loadedMessages =
           [...response.items].reverse();
 
-        setMessages(
-          loadedMessages,
-        );
+        /*
+         * Keep any realtime messages that arrived while the REST
+         * request was in flight. This is especially important for
+         * replies: the realtime event can arrive before the initial
+         * message load finishes, and replacing state wholesale here
+         * would otherwise make that message disappear until refresh.
+         */
+        setMessages((currentMessages) => {
+          const loadedMessageIds = new Set(
+            loadedMessages.map((message) => message.id),
+          );
+
+          const realtimeMessages = currentMessages.filter(
+            (message) => !loadedMessageIds.has(message.id),
+          );
+
+          return [
+            ...loadedMessages,
+            ...realtimeMessages,
+          ].sort(
+            (first, second) =>
+              new Date(first.createdAt).getTime() -
+              new Date(second.createdAt).getTime(),
+          );
+        });
 
         /*
          * Restore persisted read state from the

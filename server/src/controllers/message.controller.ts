@@ -315,7 +315,13 @@ export async function update(
       return;
     }
 
-    if (result.status === "deleted") {
+    /*
+     * `deleted` is also the successful status returned by
+     * updateMessage(). Only reject the request when the service
+     * reports that the message was already deleted and therefore
+     * has no updated message to return.
+     */
+    if (result.status === "deleted" && !result.message) {
       res.status(409).json({
         error: "Message has already been deleted",
       });
