@@ -2139,10 +2139,42 @@ a:visited {
   }
 }
 /* =========================================================
-   PROFILE EDIT BUTTON — PERMANENT UI FIX
+   PROFILE CARD — COMPLETE RESPONSIVE UI
+   ========================================================= */
+
+/* =========================================================
+   PROFILE CARD
+   ========================================================= */
+
+.profile-card {
+  position: relative;
+
+  width: 400px;
+  max-width: calc(100vw - 32px);
+
+  margin: 0 auto;
+
+  padding: 20px;
+
+  box-sizing: border-box;
+
+  background: #ffffff;
+  border-radius: 10px;
+
+  border: 1px solid #dddddd;
+}
+
+
+/* =========================================================
+   PROFILE EDIT BUTTON
    ========================================================= */
 
 .profile-edit-button {
+  position: absolute;
+
+  top: 15px;
+  right: 15px;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2164,6 +2196,8 @@ a:visited {
   appearance: none;
   -webkit-appearance: none;
 
+  box-sizing: border-box;
+
   box-shadow: none;
 
   transition:
@@ -2171,26 +2205,6 @@ a:visited {
     border-color 0.15s ease,
     transform 0.15s ease;
 }
-
-.profile-card {
-  position: relative; /* establishes positioning context */
-  width: 400px;       /* or your card’s actual width */
-  margin: auto;       /* keeps it centered */
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-}
-
-.profile-edit-button {
-  position: absolute;
-  top: 15px;          /* adjust as needed */
-  right: 15px;        /* adjust as needed */
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-
 
 .profile-edit-button:hover {
   background: #f3f3f3;
@@ -2211,7 +2225,11 @@ a:visited {
   outline-offset: 2px;
 }
 
-/* Pen icon */
+
+/* =========================================================
+   PROFILE EDIT PEN ICON
+   ========================================================= */
+
 .profile-edit-button svg {
   width: 19px;
   height: 19px;
@@ -2220,10 +2238,31 @@ a:visited {
 
   fill: none;
   stroke: currentColor;
+
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+
+/* =========================================================
+   PROFILE AVATAR
+   ========================================================= */
+
+.profile-avatar {
+  width: 76px;
+  height: 76px;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  object-fit: cover;
+
+  display: block;
+}
+
+
 /* =========================================================
    PROFILE ACTION BUTTONS
    ========================================================= */
@@ -2231,11 +2270,157 @@ a:visited {
 .profile-actions {
   display: flex;
   align-items: center;
+
   gap: 10px;
+
+  width: 100%;
+
   padding-top: 22px;
+
+  box-sizing: border-box;
+
+  flex-wrap: nowrap;
 }
 
-/* Save Changes */
+
+/* =========================================================
+   LOG OUT BUTTON
+   ========================================================= */
+
+.profile-logout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  flex: 1 1 auto;
+
+  min-width: 0;
+  height: 44px;
+
+  padding: 0 16px;
+  margin: 0;
+
+  border: 1px solid #111111;
+  border-radius: 10px;
+
+  background: #ffffff;
+  color: #222222;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+
+  white-space: nowrap;
+  text-align: center;
+
+  cursor: pointer;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  box-sizing: border-box;
+
+  box-shadow: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.profile-logout-button:hover {
+  background: #f4f4f4;
+  border-color: #bdbdbd;
+}
+
+.profile-logout-button:active {
+  background: #eaeaea;
+  transform: scale(0.98);
+}
+
+.profile-logout-button:focus {
+  outline: none;
+}
+
+.profile-logout-button:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+
+/* =========================================================
+   DELETE ACCOUNT BUTTON
+   ========================================================= */
+
+.delete-account-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  flex: 0 0 auto;
+
+  width: 170px;
+  min-width: 170px;
+
+  height: 44px;
+
+  padding: 0 14px;
+  margin: 0;
+
+  border: 1px solid #d1d1d1;
+  border-radius: 10px;
+
+  background: #ffffff;
+  color: #222222;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+
+  white-space: nowrap;
+  text-align: center;
+
+  cursor: pointer;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  box-sizing: border-box;
+
+  box-shadow: none;
+
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.delete-account-button:hover {
+  background: #f4f4f4;
+  border-color: #bdbdbd;
+}
+
+.delete-account-button:active {
+  background: #eaeaea;
+  transform: scale(0.98);
+}
+
+.delete-account-button:focus {
+  outline: none;
+}
+
+.delete-account-button:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+
+/* =========================================================
+   SAVE CHANGES BUTTON
+   ========================================================= */
+
 .profile-save-button {
   display: inline-flex;
   align-items: center;
@@ -2243,6 +2428,7 @@ a:visited {
 
   width: auto;
   min-width: 130px;
+
   height: 44px;
 
   padding: 0 20px;
@@ -2259,10 +2445,15 @@ a:visited {
   font-weight: 700;
   line-height: 1;
 
+  white-space: nowrap;
+  text-align: center;
+
   cursor: pointer;
 
   appearance: none;
   -webkit-appearance: none;
+
+  box-sizing: border-box;
 
   box-shadow: none;
 
@@ -2292,7 +2483,10 @@ a:visited {
 }
 
 
-/* Cancel */
+/* =========================================================
+   CANCEL BUTTON
+   ========================================================= */
+
 .profile-cancel-button {
   display: inline-flex;
   align-items: center;
@@ -2300,6 +2494,7 @@ a:visited {
 
   width: auto;
   min-width: 90px;
+
   height: 44px;
 
   padding: 0 20px;
@@ -2316,10 +2511,15 @@ a:visited {
   font-weight: 700;
   line-height: 1;
 
+  white-space: nowrap;
+  text-align: center;
+
   cursor: pointer;
 
   appearance: none;
   -webkit-appearance: none;
+
+  box-sizing: border-box;
 
   box-shadow: none;
 
@@ -2349,36 +2549,68 @@ a:visited {
 }
 
 
-/* Disabled state */
+/* =========================================================
+   DISABLED STATES
+   ========================================================= */
+
 .profile-save-button:disabled,
-.profile-cancel-button:disabled {
+.profile-cancel-button:disabled,
+.profile-logout-button:disabled,
+.delete-account-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
 
 /* =========================================================
-   PROFILE ACTIONS — MOBILE
+   PROFILE ACTIONS — TABLET / MOBILE
    ========================================================= */
 
 @media (max-width: 760px) {
   .profile-actions {
     display: flex;
-    flex-wrap: wrap;
+
+    width: 100%;
+
     gap: 10px;
+
+    flex-wrap: wrap;
   }
 
   .profile-save-button,
   .profile-cancel-button {
     flex: 1 1 0;
+
     min-width: 0;
+  }
+
+  .profile-logout-button {
+    flex: 1 1 0;
+
+    min-width: 0;
+  }
+
+  .delete-account-button {
+    flex: 1 1 auto;
+
+    width: auto;
+    min-width: 170px;
   }
 }
 
+
+/* =========================================================
+   MOBILE — 480px AND BELOW
+   ========================================================= */
+
 @media (max-width: 480px) {
   .profile-card {
-    width: 95%;
+    width: calc(100% - 24px);
+    max-width: none;
+
     padding: 16px;
+
+    border-radius: 10px;
   }
 
   .profile-avatar {
@@ -2386,8 +2618,61 @@ a:visited {
     height: 50px;
   }
 
+  .profile-edit-button {
+    top: 12px;
+    right: 12px;
+
+    width: 40px;
+    height: 40px;
+  }
+
   .profile-edit-button svg {
     width: 20px;
     height: 20px;
+  }
+
+  .profile-actions {
+    gap: 10px;
+
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .profile-save-button,
+  .profile-cancel-button,
+  .profile-logout-button,
+  .delete-account-button {
+    width: 100%;
+    min-width: 0;
+
+    flex: none;
+  }
+
+  .delete-account-button {
+    white-space: nowrap;
+  }
+}
+
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 360px) {
+  .profile-card {
+    width: calc(100% - 16px);
+
+    padding: 14px;
+  }
+
+  .profile-actions {
+    gap: 8px;
+  }
+
+  .profile-save-button,
+  .profile-cancel-button,
+  .profile-logout-button,
+  .delete-account-button {
+    font-size: 13px;
   }
 }
