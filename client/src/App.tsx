@@ -95,6 +95,11 @@ type AcceptedRequestNotification = {
   respondedAt: string;
 };
 
+type LiveMessageNotification = {
+  conversationId: string;
+  message: Message;
+};
+
 function formatConversationTime(
   updatedAt: string,
 ): string {
@@ -458,6 +463,20 @@ function App() {
    */
   const [unreadCounts, setUnreadCounts] =
     useState<Record<string, number>>({});
+
+  /*
+   * Live incoming-message notification state.
+   * The existing Socket.IO message_new event remains the
+   * single realtime source; this only adds notification UI.
+   */
+  const [liveMessageNotification, setLiveMessageNotification] =
+    useState<LiveMessageNotification | null>(null);
+
+  const liveMessageNotificationTimerRef =
+    useRef<number | null>(null);
+
+  const seenNotificationMessageIdsRef =
+    useRef<Set<string>>(new Set());
 
   /*
    * 7B-4A message actions UI state.
@@ -866,6 +885,162 @@ function App() {
       );
     };
   }, [user, selectedConversationId]);
+
+  /*
+   * Live Chatter Box notifications.
+   *
+   * Reuses the existing authenticated Socket.IO connection and
+   * listens to the same message_new event already used by the
+   * conversation list and active chat. No polling is introduced.
+   */
+  useEffect(() => {
+    if (!user) {
+      setLiveMessageNotification(null);
+      return;
+    }
+
+    const socket = connectSocket();
+
+    function handleLiveMessageNotification(payload: LiveMessageNotification) {
+      if (
+        !payload ||
+        typeof payload.conversationId !== "string" ||
+        !payload.message ||
+        typeof payload.message.id !== "string" ||
+        typeof payload.message.senderId !== "string"
+      ) {
+        return;
+      }
+
+      const message = payload.message;
+if (!user || message.senderId === user.id) {
+  return;
+}
+
+      if (seenNotificationMessageIdsRef.current.has(message.id)) {
+        return;
+      }
+
+      seenNotificationMessageIdsRef.current.add(message.id);
+
+      if (seenNotificationMessageIdsRef.current.size > 200) {
+        const oldestMessageId =
+          seenNotificationMessageIdsRef.current.values().next().value;
+
+        if (oldestMessageId) {
+          seenNotificationMessageIdsRef.current.delete(oldestMessageId);
+        }
+      }
+
+      const isCurrentConversation =
+        selectedConversationId === payload.conversationId;
+
+      if (!isCurrentConversation) {
+        setLiveMessageNotification({
+          conversationId: payload.conversationId,
+          message,
+        });
+      }
+
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted" &&
+        document.hidden
+      ) {
+        const senderName =
+          message.sender?.displayName ||
+          message.sender?.username ||
+          "New message";
+
+        const notification = new Notification(
+          `Chatter Box · ${senderName}`,
+          {
+            body: message.content || "New message",
+            tag: `chatter-box-message-${message.id}`,
+          },
+        );
+
+        notification.onclick = () => {
+          window.focus();
+          setSelectedConversationId(payload.conversationId);
+          setLiveMessageNotification(null);
+          notification.close();
+        };
+      }
+    }
+
+    socket.on(
+      "message_new",
+      handleLiveMessageNotification,
+    );
+
+    return () => {
+      socket.off(
+        "message_new",
+        handleLiveMessageNotification,
+      );
+    };
+  }, [user?.id, selectedConversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (liveMessageNotificationTimerRef.current !== null) {
+        window.clearTimeout(
+          liveMessageNotificationTimerRef.current,
+        );
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!liveMessageNotification) {
+      return;
+    }
+
+    if (liveMessageNotificationTimerRef.current !== null) {
+      window.clearTimeout(
+        liveMessageNotificationTimerRef.current,
+      );
+    }
+
+    liveMessageNotificationTimerRef.current =
+      window.setTimeout(() => {
+        setLiveMessageNotification(null);
+        liveMessageNotificationTimerRef.current = null;
+      }, 5000);
+
+    return () => {
+      if (liveMessageNotificationTimerRef.current !== null) {
+        window.clearTimeout(
+          liveMessageNotificationTimerRef.current,
+        );
+        liveMessageNotificationTimerRef.current = null;
+      }
+    };
+  }, [liveMessageNotification]);
+
+  function handleLiveMessageNotificationClick() {
+    if (!liveMessageNotification) {
+      return;
+    }
+
+    setSelectedConversationId(
+      liveMessageNotification.conversationId,
+    );
+    setLiveMessageNotification(null);
+  }
+
+  async function handleEnableDesktopNotifications() {
+    if (typeof Notification === "undefined") {
+      return;
+    }
+
+    try {
+      await Notification.requestPermission();
+    } catch {
+      return;
+    }
+  }
 
   /*
    * 7B-4A: close an open message-actions menu when
@@ -4095,6 +4270,126 @@ function App() {
 
   return (
     <div className="messenger-app">
+      {liveMessageNotification && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 20,
+            right: 20,
+            zIndex: 1000,
+            width: "min(360px, calc(100vw - 32px))",
+            boxSizing: "border-box",
+            padding: 14,
+            border: "1px solid #dddddd",
+            borderRadius: 14,
+            background: "#ffffff",
+            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.14)",
+            cursor: "pointer",
+          }}
+          onClick={handleLiveMessageNotificationClick}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                flex: "0 0 42px",
+                borderRadius: "50%",
+                overflow: "hidden",
+                background: "#eef1f5",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 800,
+                color: "#111111",
+              }}
+            >
+              {liveMessageNotification.message.sender?.avatarUrl ? (
+                <img
+                  src={liveMessageNotification.message.sender.avatarUrl}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                (liveMessageNotification.message.sender?.displayName ||
+                  liveMessageNotification.message.sender?.username ||
+                  "?")
+                  .charAt(0)
+                  .toUpperCase()
+              )}
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#111111",
+                  marginBottom: 3,
+                }}
+              >
+                {liveMessageNotification.message.sender?.displayName ||
+                  liveMessageNotification.message.sender?.username ||
+                  "New message"}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#666666",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {liveMessageNotification.message.content || "New message"}
+              </div>
+
+              {typeof Notification !== "undefined" &&
+                Notification.permission === "default" && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleEnableDesktopNotifications();
+                    }}
+                    style={{
+                      marginTop: 8,
+                      padding: 0,
+                      border: 0,
+                      background: "transparent",
+                      color: "#111111",
+                      fontFamily: "inherit",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Enable desktop notifications
+                  </button>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {acceptedRequestNotification && !acceptedRequestNotificationLoading && (
         <div className="accepted-request-banner" role="status">
           <div className="accepted-request-banner-copy">
