@@ -8,20 +8,20 @@ datasource db {
 }
 
 model User {
-  id                      String               @id @default(uuid())
-  username                String               @unique
-  email                   String               @unique
+  id                      String                @id @default(uuid())
+  username                String                @unique
+  email                   String                @unique
   passwordHash            String
   displayName             String?
   avatarUrl               String?
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
   bio                     String?
   gender                  Gender?
   members                 ConversationMember[]
   messages                Message[]
-  receivedMessageRequests MessageRequest[]     @relation("ReceivedMessageRequests")
-  sentMessageRequests     MessageRequest[]     @relation("SentMessageRequests")
+  receivedMessageRequests MessageRequest[]      @relation("ReceivedMessageRequests")
+  sentMessageRequests     MessageRequest[]      @relation("SentMessageRequests")
   sessions                Session[]
 }
 

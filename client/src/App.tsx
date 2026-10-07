@@ -513,6 +513,31 @@ function App() {
   const [replyingToMessage, setReplyingToMessage] =
     useState<Message | null>(null);
 
+  /*
+   * Swipe-to-reply state.
+   *
+   * Mobile/touch behavior:
+   * - own message  -> swipe left
+   * - received msg -> swipe right
+   *
+   * Desktop mouse interaction is intentionally untouched.
+   */
+  const [swipingMessageId, setSwipingMessageId] =
+    useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] =
+    useState(0);
+
+  const swipeStartXRef =
+    useRef<number | null>(null);
+  const swipeStartYRef =
+    useRef<number | null>(null);
+  const swipePointerIdRef =
+    useRef<number | null>(null);
+  const swipeDirectionRef =
+    useRef<"left" | "right" | null>(null);
+  const swipeActivatedRef =
+    useRef(false);
+
   const messageListRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -1697,6 +1722,133 @@ if (!user || message.senderId === user.id) {
     setEditingMessageId(null);
     setEditingMessageContent("");
     setMessageUpdateError("");
+  }
+
+  function resetMessageSwipe() {
+    swipeStartXRef.current = null;
+    swipeStartYRef.current = null;
+    swipePointerIdRef.current = null;
+    swipeDirectionRef.current = null;
+    swipeActivatedRef.current = false;
+    setSwipingMessageId(null);
+    setSwipeOffset(0);
+  }
+
+  function handleMessageSwipeStart(
+    event: ReactPointerEvent<HTMLDivElement>,
+    message: Message,
+  ) {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+
+    swipeStartXRef.current = event.clientX;
+    swipeStartYRef.current = event.clientY;
+    swipePointerIdRef.current = event.pointerId;
+    swipeDirectionRef.current =
+      message.senderId === user?.id ? "left" : "right";
+    swipeActivatedRef.current = false;
+
+    setSwipingMessageId(message.id);
+    setSwipeOffset(0);
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleMessageSwipeMove(
+    event: ReactPointerEvent<HTMLDivElement>,
+    message: Message,
+  ) {
+    if (
+      event.pointerType === "mouse" ||
+      swipePointerIdRef.current !== event.pointerId ||
+      swipeStartXRef.current === null ||
+      swipeStartYRef.current === null ||
+      swipingMessageId !== message.id
+    ) {
+      return;
+    }
+
+    const deltaX =
+      event.clientX - swipeStartXRef.current;
+    const deltaY =
+      event.clientY - swipeStartYRef.current;
+
+    if (
+      Math.abs(deltaY) > Math.abs(deltaX) &&
+      Math.abs(deltaY) > 10
+    ) {
+      resetMessageSwipe();
+      return;
+    }
+
+    const direction =
+      swipeDirectionRef.current;
+
+    if (!direction) {
+      return;
+    }
+
+    const directionalDistance =
+      direction === "left"
+        ? Math.min(0, deltaX)
+        : Math.max(0, deltaX);
+
+    const limitedOffset = Math.max(
+      -96,
+      Math.min(96, directionalDistance),
+    );
+
+    if (Math.abs(limitedOffset) > 8) {
+      swipeActivatedRef.current = true;
+    }
+
+    setSwipeOffset(limitedOffset);
+  }
+
+  function handleMessageSwipeEnd(
+    event: ReactPointerEvent<HTMLDivElement>,
+    message: Message,
+  ) {
+    if (
+      event.pointerType === "mouse" ||
+      swipePointerIdRef.current !== event.pointerId
+    ) {
+      return;
+    }
+
+    const direction =
+      swipeDirectionRef.current;
+    const offset = swipeOffset;
+
+    const isValidSwipe =
+      swipeActivatedRef.current &&
+      ((direction === "left" && offset <= -64) ||
+        (direction === "right" && offset >= 64));
+
+    if (isValidSwipe) {
+      startReplyingToMessage(message);
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    resetMessageSwipe();
+  }
+
+  function handleMessageSwipeCancel(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    if (
+      event.pointerType !== "mouse" &&
+      swipePointerIdRef.current === event.pointerId &&
+      event.currentTarget.hasPointerCapture(event.pointerId)
+    ) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    resetMessageSwipe();
   }
 
   function startReplyingToMessage(message: Message) {
@@ -7875,6 +8027,40 @@ if (!user || message.senderId === user.id) {
                                     ? "message-action-wrap-own"
                                     : "message-action-wrap-other"
                                 }`}
+                                style={{
+                                  transform:
+                                    swipingMessageId === message.id
+                                      ? `translateX(${swipeOffset}px)`
+                                      : undefined,
+                                  transition:
+                                    swipingMessageId === message.id
+                                      ? "none"
+                                      : "transform 160ms ease",
+                                  touchAction: "pan-y",
+                                  userSelect:
+                                    swipingMessageId === message.id
+                                      ? "none"
+                                      : undefined,
+                                }}
+                                onPointerDown={(event) =>
+                                  handleMessageSwipeStart(
+                                    event,
+                                    message,
+                                  )
+                                }
+                                onPointerMove={(event) =>
+                                  handleMessageSwipeMove(
+                                    event,
+                                    message,
+                                  )
+                                }
+                                onPointerUp={(event) =>
+                                  handleMessageSwipeEnd(
+                                    event,
+                                    message,
+                                  )
+                                }
+                                onPointerCancel={handleMessageSwipeCancel}
                               >
                                 <div
                                   className={`message-bubble ${
