@@ -313,6 +313,40 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] =
     useState<string | null>(null);
 
+  /*
+   * Mobile/browser back navigation:
+   * Keep one history entry for an opened conversation so the
+   * device back gesture/button returns to the conversation list
+   * instead of closing the Chatter Box page.
+   */
+  useEffect(() => {
+    function handleBrowserBack() {
+      if (selectedConversationId) {
+        setSelectedConversationId(null);
+        setOpenMessageActionId(null);
+        setConversationActionMenuId(null);
+      }
+    }
+
+    window.addEventListener("popstate", handleBrowserBack);
+
+    return () => {
+      window.removeEventListener("popstate", handleBrowserBack);
+    };
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId) {
+      return;
+    }
+
+    window.history.pushState(
+      { chatterBoxConversation: selectedConversationId },
+      "",
+      window.location.href,
+    );
+  }, [selectedConversationId]);
+
   const [profileOpen, setProfileOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
 
