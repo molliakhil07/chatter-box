@@ -6,8 +6,6 @@ import { sendPasswordResetEmail } from "./email.service";
 
 const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 60;
 
-let passwordResetTableReady: Promise<void> | null = null;
-
 function hashToken(token: string): string {
   return crypto
     .createHash("sha256")
@@ -22,74 +20,22 @@ function getFrontendUrl(): string {
   ).replace(/\/$/, "");
 }
 
-async function ensurePasswordResetTable(): Promise<void> {
-  if (!passwordResetTableReady) {
-    passwordResetTableReady = prisma
-      .$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
-          "id" TEXT PRIMARY KEY,
-          "userId" TEXT NOT NULL,
-          "tokenHash" TEXT NOT NULL,
-          "expiresAt" TIMESTAMPTZ NOT NULL,
-          "usedAt" TIMESTAMPTZ NULL,
-          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          CONSTRAINT "PasswordResetToken_userId_fkey"
-            FOREIGN KEY ("userId")
-            REFERENCES "User"("id")
-            ON DELETE CASCADE
-        )
-      `)
-      .then(async () => {
-        await prisma.$executeRawUnsafe(`
-          CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_tokenHash_key"
-          ON "PasswordResetToken" ("tokenHash")
-        `);
-
-        await prisma.$executeRawUnsafe(`
-          CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx"
-          ON "PasswordResetToken" ("userId")
-        `);
-
-        await prisma.$executeRawUnsafe(`
-          CREATE INDEX IF NOT EXISTS "PasswordResetToken_expiresAt_idx"
-          ON "PasswordResetToken" ("expiresAt")
-        `);
-      })
-      .catch((error) => {
-        passwordResetTableReady = null;
-        throw error;
-      });
-  }
-
-  await passwordResetTableReady;
-}
-
 export async function requestPasswordReset(
   email: string,
 ): Promise<void> {
-  await ensurePasswordResetTable();
-
   const normalizedEmail = email.trim().toLowerCase();
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      email: string;
-      displayName: string | null;
-      emailVerified: boolean;
-    }>
-  >`
-    SELECT
-      "id",
-      "email",
-      "displayName",
-      "emailVerified"
-    FROM "User"
-    WHERE "email" = ${normalizedEmail}
-    LIMIT 1
-  `;
-
-  const user = rows[0];
+  const user = await prisma.user.findUnique({
+    where: {
+      email: normalizedEmail,
+    },
+    select: {
+      id: true,
+      email: true,
+      displayName: true,
+      emailVerified: true,
+    },
+  });
 
   /*
    * Deliberately return without sending anything when the account does not
@@ -100,10 +46,11 @@ export async function requestPasswordReset(
     return;
   }
 
-  await prisma.$executeRaw`
-    DELETE FROM "PasswordResetToken"
-    WHERE "userId" = ${user.id}
-  `;
+  await prisma.passwordResetToken.deleteMany({
+    where: {
+      userId: user.id,
+    },
+  });
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashToken(rawToken);
@@ -111,22 +58,14 @@ export async function requestPasswordReset(
     Date.now() + PASSWORD_RESET_TOKEN_TTL_MS,
   );
 
-  await prisma.$executeRaw`
-    INSERT INTO "PasswordResetToken" (
-      "id",
-      "userId",
-      "tokenHash",
-      "expiresAt",
-      "createdAt"
-    )
-    VALUES (
-      ${crypto.randomUUID()},
-      ${user.id},
-      ${tokenHash},
-      ${expiresAt},
-      NOW()
-    )
-  `;
+  await prisma.passwordResetToken.create({
+    data: {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    },
+  });
 
   const resetUrl =
     `${getFrontendUrl()}/?reset_password=${encodeURIComponent(rawToken)}`;
@@ -138,10 +77,12 @@ export async function requestPasswordReset(
       resetUrl,
     });
   } catch (error) {
-    await prisma.$executeRaw`
-      DELETE FROM "PasswordResetToken"
-      WHERE "tokenHash" = ${tokenHash}
-    `;
+    await prisma.passwordResetToken.deleteMany({
+      where: {
+        tokenHash,
+      },
+    });
+
     throw error;
   }
 }
@@ -150,31 +91,21 @@ export async function resetPassword(
   rawToken: string,
   password: string,
 ): Promise<boolean> {
-  await ensurePasswordResetTable();
-
   const tokenHash = hashToken(rawToken);
 
   return prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<
-      Array<{
-        id: string;
-        userId: string;
-        expiresAt: Date;
-        usedAt: Date | null;
-      }>
-    >`
-      SELECT
-        "id",
-        "userId",
-        "expiresAt",
-        "usedAt"
-      FROM "PasswordResetToken"
-      WHERE "tokenHash" = ${tokenHash}
-      LIMIT 1
-      FOR UPDATE
-    `;
-
-    const tokenRecord = rows[0];
+    const tokenRecord =
+      await tx.passwordResetToken.findUnique({
+        where: {
+          tokenHash,
+        },
+        select: {
+          id: true,
+          userId: true,
+          expiresAt: true,
+          usedAt: true,
+        },
+      });
 
     if (
       !tokenRecord ||
@@ -188,24 +119,40 @@ export async function resetPassword(
       type: argon2.argon2id,
     });
 
-    await tx.$executeRaw`
-      UPDATE "User"
-      SET "passwordHash" = ${passwordHash},
-          "updatedAt" = NOW()
-      WHERE "id" = ${tokenRecord.userId}
-    `;
+    const markedUsed = await tx.passwordResetToken.updateMany({
+      where: {
+        id: tokenRecord.id,
+        usedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
 
-    await tx.$executeRaw`
-      UPDATE "PasswordResetToken"
-      SET "usedAt" = NOW()
-      WHERE "id" = ${tokenRecord.id}
-    `;
+    if (markedUsed.count !== 1) {
+      return false;
+    }
 
-    await tx.$executeRaw`
-      DELETE FROM "PasswordResetToken"
-      WHERE "userId" = ${tokenRecord.userId}
-        AND "id" <> ${tokenRecord.id}
-    `;
+    await tx.user.update({
+      where: {
+        id: tokenRecord.userId,
+      },
+      data: {
+        passwordHash,
+      },
+    });
+
+    await tx.passwordResetToken.deleteMany({
+      where: {
+        userId: tokenRecord.userId,
+        id: {
+          not: tokenRecord.id,
+        },
+      },
+    });
 
     await tx.session.updateMany({
       where: {

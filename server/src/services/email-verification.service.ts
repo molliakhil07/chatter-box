@@ -29,18 +29,17 @@ type VerificationUser = {
 async function getVerificationUser(
   userId: string,
 ): Promise<VerificationUser | null> {
-  const rows = await prisma.$queryRaw<VerificationUser[]>`
-    SELECT
-      "id",
-      "email",
-      "displayName",
-      "emailVerified"
-    FROM "User"
-    WHERE "id" = ${userId}
-    LIMIT 1
-  `;
-
-  return rows[0] ?? null;
+  return prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      id: true,
+      email: true,
+      displayName: true,
+      emailVerified: true,
+    },
+  });
 }
 
 export async function createAndSendVerificationEmail(
@@ -56,11 +55,12 @@ export async function createAndSendVerificationEmail(
     return;
   }
 
-  await prisma.$executeRaw`
-    DELETE FROM "EmailVerificationToken"
-    WHERE "userId" = ${userId}
-      AND "usedAt" IS NULL
-  `;
+  await prisma.emailVerificationToken.deleteMany({
+    where: {
+      userId,
+      usedAt: null,
+    },
+  });
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashToken(rawToken);
@@ -68,22 +68,14 @@ export async function createAndSendVerificationEmail(
     Date.now() + VERIFICATION_TOKEN_TTL_MS,
   );
 
-  await prisma.$executeRaw`
-    INSERT INTO "EmailVerificationToken" (
-      "id",
-      "userId",
-      "tokenHash",
-      "expiresAt",
-      "createdAt"
-    )
-    VALUES (
-      ${crypto.randomUUID()},
-      ${userId},
-      ${tokenHash},
-      ${expiresAt},
-      NOW()
-    )
-  `;
+  await prisma.emailVerificationToken.create({
+    data: {
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash,
+      expiresAt,
+    },
+  });
 
   const verificationUrl =
     `${getFrontendUrl()}/?verify_email=${encodeURIComponent(rawToken)}`;
@@ -95,10 +87,12 @@ export async function createAndSendVerificationEmail(
       verificationUrl,
     });
   } catch (error) {
-    await prisma.$executeRaw`
-      DELETE FROM "EmailVerificationToken"
-      WHERE "tokenHash" = ${tokenHash}
-    `;
+    await prisma.emailVerificationToken.deleteMany({
+      where: {
+        tokenHash,
+      },
+    });
+
     throw error;
   }
 }
@@ -108,56 +102,62 @@ export async function verifyEmailToken(
 ): Promise<boolean> {
   const tokenHash = hashToken(rawToken);
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      userId: string;
-      expiresAt: Date;
-      usedAt: Date | null;
-    }>
-  >`
-    SELECT
-      "id",
-      "userId",
-      "expiresAt",
-      "usedAt"
-    FROM "EmailVerificationToken"
-    WHERE "tokenHash" = ${tokenHash}
-    LIMIT 1
-  `;
+  return prisma.$transaction(async (tx) => {
+    const tokenRecord =
+      await tx.emailVerificationToken.findUnique({
+        where: {
+          tokenHash,
+        },
+        select: {
+          id: true,
+          userId: true,
+          expiresAt: true,
+          usedAt: true,
+        },
+      });
 
-  const tokenRecord = rows[0];
+    if (
+      !tokenRecord ||
+      tokenRecord.usedAt !== null ||
+      tokenRecord.expiresAt <= new Date()
+    ) {
+      return false;
+    }
 
-  if (
-    !tokenRecord ||
-    tokenRecord.usedAt !== null ||
-    tokenRecord.expiresAt <= new Date()
-  ) {
-    return false;
-  }
+    const updatedUser = await tx.user.updateMany({
+      where: {
+        id: tokenRecord.userId,
+        emailVerified: false,
+      },
+      data: {
+        emailVerified: true,
+      },
+    });
 
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`
-      UPDATE "User"
-      SET "emailVerified" = TRUE,
-          "updatedAt" = NOW()
-      WHERE "id" = ${tokenRecord.userId}
-    `;
+    if (updatedUser.count !== 1) {
+      return false;
+    }
 
-    await tx.$executeRaw`
-      UPDATE "EmailVerificationToken"
-      SET "usedAt" = NOW()
-      WHERE "id" = ${tokenRecord.id}
-    `;
+    await tx.emailVerificationToken.update({
+      where: {
+        id: tokenRecord.id,
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
 
-    await tx.$executeRaw`
-      DELETE FROM "EmailVerificationToken"
-      WHERE "userId" = ${tokenRecord.userId}
-        AND "id" <> ${tokenRecord.id}
-    `;
+    await tx.emailVerificationToken.deleteMany({
+      where: {
+        userId: tokenRecord.userId,
+        id: {
+          not: tokenRecord.id,
+        },
+      },
+    });
+
+    return true;
   });
-
-  return true;
 }
 
 export async function resendVerificationEmail(
@@ -165,21 +165,15 @@ export async function resendVerificationEmail(
 ): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      emailVerified: boolean;
-    }>
-  >`
-    SELECT
-      "id",
-      "emailVerified"
-    FROM "User"
-    WHERE "email" = ${normalizedEmail}
-    LIMIT 1
-  `;
-
-  const user = rows[0];
+  const user = await prisma.user.findUnique({
+    where: {
+      email: normalizedEmail,
+    },
+    select: {
+      id: true,
+      emailVerified: true,
+    },
+  });
 
   if (!user || user.emailVerified) {
     return;
