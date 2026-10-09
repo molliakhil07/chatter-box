@@ -1,0 +1,81 @@
+
+name: Chatter Box CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend Tests and Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/chatterbox_ci?schema=public
+      DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@127.0.0.1:5432/chatterbox_ci?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run backend automated tests
+        run: npm test
+
+      - name: Build backend and generate Prisma Client
+        run: npm run build
+
+  frontend:
+    name: Frontend Checks and E2E Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Build frontend for production
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend E2E tests
+        run: npm run test:e2e

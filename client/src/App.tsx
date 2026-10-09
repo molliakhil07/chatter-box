@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -313,28 +314,6 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] =
     useState<string | null>(null);
 
-  /*
-   * Mobile/browser back navigation:
-   * Keep one history entry for an opened conversation so the
-   * device back gesture/button returns to the conversation list
-   * instead of closing the Chatter Box page.
-   */
-  useEffect(() => {
-    function handleBrowserBack() {
-      if (selectedConversationId) {
-        setSelectedConversationId(null);
-        setOpenMessageActionId(null);
-        setConversationActionMenuId(null);
-      }
-    }
-
-    window.addEventListener("popstate", handleBrowserBack);
-
-    return () => {
-      window.removeEventListener("popstate", handleBrowserBack);
-    };
-  }, [selectedConversationId]);
-
   useEffect(() => {
     if (!selectedConversationId) {
       return;
@@ -522,6 +501,29 @@ function App() {
     useState<string | null>(null);
 
   /*
+   * Mobile/browser back navigation:
+   * Keep one history entry for an opened conversation so the
+   * device back gesture/button returns to the conversation list
+   * instead of closing the Chatter Box page.
+   */
+  useEffect(() => {
+    function handleBrowserBack() {
+      if (selectedConversationId) {
+        setSelectedConversationId(null);
+        setOpenMessageActionId(null);
+        setConversationActionMenuId(null);
+      }
+    }
+
+    window.addEventListener("popstate", handleBrowserBack);
+
+    return () => {
+      window.removeEventListener("popstate", handleBrowserBack);
+    };
+  }, [selectedConversationId]);
+
+
+  /*
    * 7B-4B message editing state.
    */
   const [editingMessageId, setEditingMessageId] =
@@ -585,11 +587,12 @@ function App() {
   const readMessageIdsRef =
     useRef<Set<string>>(new Set());
 
-  function markVisibleMessagesAsRead() {
+  const markVisibleMessagesAsRead = useCallback(() => {
     const conversationId =
       selectedConversationId;
+    const currentUserId = user?.id;
 
-    if (!conversationId || !user) {
+    if (!conversationId || !currentUserId) {
       return;
     }
 
@@ -620,7 +623,7 @@ function App() {
         return;
       }
 
-      if (senderId === user.id) {
+      if (senderId === currentUserId) {
         return;
       }
 
@@ -658,7 +661,7 @@ function App() {
         },
       );
     });
-  }
+  }, [selectedConversationId, user?.id]);
 
   /*
    * Consume email-verification and password-reset links opened from email.
@@ -953,11 +956,12 @@ function App() {
    * conversation list and active chat. No polling is introduced.
    */
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       setLiveMessageNotification(null);
       return;
     }
 
+    const currentUserId = user.id;
     const socket = connectSocket();
 
     function handleLiveMessageNotification(payload: LiveMessageNotification) {
@@ -972,9 +976,9 @@ function App() {
       }
 
       const message = payload.message;
-if (!user || message.senderId === user.id) {
-  return;
-}
+      if (message.senderId === currentUserId) {
+        return;
+      }
 
       if (seenNotificationMessageIdsRef.current.has(message.id)) {
         return;
@@ -1368,6 +1372,7 @@ if (!user || message.senderId === user.id) {
   }, [
     selectedConversationId,
     user?.id,
+    markVisibleMessagesAsRead,
   ]);
 
   /*
@@ -1482,6 +1487,7 @@ if (!user || message.senderId === user.id) {
   }, [
     selectedConversationId,
     user?.id,
+    markVisibleMessagesAsRead,
   ]);
 
   /*
@@ -1504,6 +1510,7 @@ if (!user || message.senderId === user.id) {
   }, [
     selectedConversationId,
     messages,
+    markVisibleMessagesAsRead,
   ]);
 
   /*
@@ -2475,7 +2482,7 @@ if (!user || message.senderId === user.id) {
    * The backend remains the source of truth.
    */
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       setMessageRequests([]);
       setMessageRequestsError(false);
       setMessageRequestsLoading(false);
@@ -2541,7 +2548,7 @@ if (!user || message.senderId === user.id) {
    * acceptance notification recoverable after reconnect/login.
    */
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       setAcceptedRequestNotification(null);
       return;
     }
@@ -2601,7 +2608,7 @@ if (!user || message.senderId === user.id) {
    * 5D-4A realtime acceptance event.
    */
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       return;
     }
 
