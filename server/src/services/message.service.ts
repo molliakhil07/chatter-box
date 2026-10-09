@@ -59,7 +59,10 @@ export async function createMessage(
 
   const normalizedContent = content.trim();
 
-  if (normalizedContent.length === 0 || normalizedContent.length > MAX_MESSAGE_LENGTH) {
+  if (
+    normalizedContent.length === 0 ||
+    normalizedContent.length > MAX_MESSAGE_LENGTH
+  ) {
     return {
       status: "invalid_content" as const,
     };
@@ -88,9 +91,7 @@ export async function createMessage(
       conversationId,
       senderId,
       content: normalizedContent,
-      ...(replyToMessageId
-        ? { replyToMessageId }
-        : {}),
+      ...(replyToMessageId ? { replyToMessageId } : {}),
     },
     select: messageSelect,
   });
@@ -125,7 +126,8 @@ export async function getConversationMessages(
     return null;
   }
 
-  const messages = await prisma.message.findMany({
+  // Fetch one extra message to determine whether another page exists.
+  const messagesWithExtra = await prisma.message.findMany({
     where: {
       conversationId,
       ...(membership.clearedAt
@@ -147,9 +149,17 @@ export async function getConversationMessages(
           skip: 1,
         }
       : {}),
-    take: limit,
+    take: limit + 1,
     select: messageSelect,
   });
+
+  const hasMore = messagesWithExtra.length > limit;
+  const messages = messagesWithExtra.slice(0, limit);
+
+  const nextCursor =
+    hasMore && messages.length > 0
+      ? messages[messages.length - 1].id
+      : null;
 
   const otherMember = await prisma.conversationMember.findFirst({
     where: {
@@ -193,6 +203,7 @@ export async function getConversationMessages(
 
   return {
     items: messages,
+    nextCursor,
     readMessageIds,
   };
 }
