@@ -1,3 +1,4 @@
+
 {
   "name": "server",
   "version": "1.0.0",
@@ -37,5 +38,9 @@
     "socket.io-client": "^4.8.3",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2",
+    "mysql2": "^3.24.4"
   }
 }
