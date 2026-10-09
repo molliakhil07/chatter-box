@@ -1,0 +1,349 @@
+🛠️ Production Hardening Plan
+We'll work in controlled stages:
+Stage	Area	Priority
+P1	Database & Prisma production correctness	🔴 Critical
+P2	Automated backend/API testing	🔴 Critical
+P3	Socket.IO/realtime testing	🔴 Critical
+P4	Frontend E2E testing	🔴 Critical
+P5	CI/CD with GitHub Actions	🔴 Critical
+P6	Security hardening	🟠 High
+P7	Repository cleanup	🟠 High
+P8	Production configuration	🟠 High
+P9	Performance & reliability	🟡 Medium
+P10	Final production audit	🔴 Critical
+
+
+And importantly:
+We will not rewrite working Chatter Box functionality just for the sake of “productionizing” it.
+
+We'll harden what you already have.
+
+P1 — Database & Prisma
+This should be our first stage.
+Your current database situation is the one area I don't want to leave as-is.
+We currently have application-managed tables such as:
+User
+Session
+Conversation
+ConversationMember
+Message
+...
+
+and additional tables such as:
+EmailVerificationToken
+PasswordResetToken
+
+being handled partly outside the normal Prisma migration flow.
+That needs to become deterministic.
+Production requirement
+A completely new database should be able to do:
+clone repository
+      ↓
+install dependencies
+      ↓
+configure DATABASE_URL
+      ↓
+prisma migrate deploy
+      ↓
+database ready
+      ↓
+start server
+
+No manual SQL.
+No hidden table creation.
+No:
+CREATE TABLE IF NOT EXISTS ...
+
+inside application runtime.
+No migration drift.
+
+P2 — Backend automated tests
+After the database is stable, we'll build a proper test suite.
+We'll test:
+Authentication
+✓ registration
+✓ duplicate username
+✓ duplicate email
+✓ invalid password
+✓ invalid email
+✓ email verification
+✓ expired verification token
+✓ login
+✓ wrong password
+✓ unverified login
+✓ logout
+✓ expired session
+✓ revoked session
+
+Password reset
+✓ request reset
+✓ unknown email doesn't leak account existence
+✓ valid reset
+✓ invalid token
+✓ expired token
+✓ token cannot be reused
+✓ sessions revoked after reset
+
+Account
+✓ get profile
+✓ update profile
+✓ invalid profile fields
+✓ delete account
+✓ deleted account cannot authenticate
+
+P3 — Messaging tests
+Then we'll test the actual heart of Chatter Box.
+Conversations
+✓ create conversation
+✓ duplicate direct conversation handling
+✓ conversation membership
+✓ unauthorized conversation access
+✓ remove member
+✓ delete conversation
+
+Messages
+✓ send message
+✓ empty message rejected
+✓ >4000 chars rejected
+✓ unauthorized send rejected
+✓ retrieve messages
+✓ pagination
+✓ edit own message
+✓ cannot edit another user's message
+✓ delete own message
+✓ cannot delete another user's message
+
+Replies
+✓ reply to own message
+✓ reply to received message
+✓ reply preview
+✓ invalid reply ID
+✓ reply to message from another conversation rejected
+
+
+P4 — Realtime testing
+This is especially important because Chatter Box is not just a REST application.
+We'll test:
+User A
+   │
+   │ message
+   ▼
+Server
+   │
+   ├────► User B conversation
+   │
+   └────► User B private room
+
+Then:
+sent
+ ↓
+delivered
+ ↓
+read
+
+We'll test:
+- realtime message delivery
+- conversation-list notification
+- delivered state
+- read state
+- editing realtime
+- deleting realtime
+- typing indicator
+- socket authentication
+- unauthorized conversation room access
+- reconnect behavior
+This is where automated testing will give you massive protection against regressions.
+
+
+P5 — GitHub Actions
+Right now your repository doesn't have an automated CI pipeline.
+We'll add something like:
+GitHub Push / Pull Request
+          │
+          ▼
+     Install deps
+          │
+          ▼
+    TypeScript check
+          │
+          ▼
+       Lint
+          │
+          ▼
+     Backend tests
+          │
+          ▼
+    Frontend tests
+          │
+          ▼
+      Build client
+          │
+          ▼
+      Build server
+          │
+          ▼
+        PASS ✅
+
+Then GitHub becomes your automatic gatekeeper.
+If you accidentally break something:
+❌ CI FAILED
+
+before the change reaches production.
+
+
+P6 — Security hardening
+We'll perform a second security audit specifically for:
+Authentication
+Authorization
+Sessions
+Cookies
+CORS
+CSRF
+XSS
+SQL injection
+Prisma queries
+Rate limiting
+Brute force
+Password reset
+Email verification
+Socket authentication
+Socket authorization
+Input validation
+Request size limits
+Error leakage
+Security headers
+Secrets
+Logging
+
+We'll also examine whether any sensitive information can appear in:
+HTTP responses
+logs
+Socket events
+browser storage
+URLs
+cookies
+Git history
+
+P7 — Repository cleanup
+We'll clean the repository without touching application behavior.
+For example, remove development artifacts such as:
+chatcookies.txt
+cookies.txt
+temp/
+
+and ensure secrets and local files are properly ignored.
+We'll also clean up scripts like the problematic:
+prisma skills sync || exit 0
+
+so production failures don't get silently swallowed.
+
+P8 — Production configuration
+We'll establish a proper separation:
+Development
+     │
+     ├── localhost
+     ├── local database
+     └── development email
+
+Production
+     │
+     ├── Vercel frontend
+     ├── production backend
+     ├── Neon PostgreSQL
+     ├── production SMTP
+     └── production environment variables
+
+We'll document every required environment variable.
+Something along the lines of:
+DATABASE_URL
+FRONTEND_URL
+BACKEND_URL
+SMTP_HOST
+SMTP_PORT
+SMTP_USER
+SMTP_PASSWORD
+NODE_ENV
+
+with no actual secrets committed anywhere.
+
+
+P9 — Performance & reliability
+Once correctness is established, we'll look at:
+Database indexes
+N+1 queries
+Message pagination
+Socket connection handling
+Memory leaks
+Large conversations
+Large message histories
+Rate-limit memory
+Database connection handling
+Frontend rendering
+Bundle size
+
+Especially message loading.
+Your current API already uses pagination/cursors, which is a good foundation.
+
+
+P10 — Final production gate
+At the end, we'll run a final checklist.
+Something like:
+🔐 Security
+[ ] Authentication secure
+[ ] Authorization secure
+[ ] Sessions secure
+[ ] Password reset secure
+[ ] Email verification secure
+[ ] Cookies secure
+[ ] CORS secure
+[ ] Rate limiting production-safe
+[ ] Secrets clean
+
+💬 Messaging
+[ ] Send
+[ ] Receive
+[ ] Delivered
+[ ] Read
+[ ] Edit
+[ ] Delete
+[ ] Reply
+[ ] Swipe reply
+[ ] Notifications
+[ ] Typing
+[ ] Reconnect
+
+🗄️ Database
+[ ] Schema deterministic
+[ ] Migrations clean
+[ ] Fresh DB works
+[ ] Production migration works
+[ ] Indexes verified
+
+🧪 Testing
+[ ] Unit tests
+[ ] API tests
+[ ] Database tests
+[ ] Socket tests
+[ ] E2E tests
+[ ] Build tests
+[ ] CI
+
+🚀 Deployment
+[ ] Frontend production build
+[ ] Backend production build
+[ ] Environment variables
+[ ] Database
+[ ] SMTP
+[ ] Health checks
+[ ] Logging
+[ ] Error handling
+[ ] Rollback plan
+
+Only when these are green will I tell you:
+🟢 CHATTER BOX IS PRODUCTION READY
+One important rule for our work
+Because you've already spent a lot of time getting the existing application working, I will preserve the current behavior unless there is a genuine production/security reason to change it.
+And because you prefer complete files, whenever we actually modify code I'll give you:
+the complete updated file to replace
+
+—not tiny fragments scattered throughout the project.

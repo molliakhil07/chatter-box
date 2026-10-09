@@ -23,3 +23,8 @@ Thumbs.db
 # Editor files
 .vscode/
 .idea/
+
+# Local authentication test artifacts — never commit
+server/chatcookies.txt
+server/cookies.txt
+server/temp/
