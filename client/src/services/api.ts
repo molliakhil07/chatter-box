@@ -61,6 +61,8 @@ export async function registerAccount(input: {
   password: string;
   displayName: string;
   gender: "MALE" | "FEMALE";
+  termsAccepted: true;
+  privacyPolicyAcknowledged: true;
 }): Promise<{ verificationRequired: boolean; email: string }> {
   const response = await fetch(
     `${API_BASE_URL}/auth/register`,

@@ -1,6 +1,7 @@
 import argon2 from "argon2";
 
 import { prisma } from "../config/prisma";
+import { createPolicyConsentData } from "../utils/policy-consent";
 
 type RegisterUserInput = {
   username: string;
@@ -8,6 +9,8 @@ type RegisterUserInput = {
   password: string;
   displayName?: string;
   gender: "MALE" | "FEMALE";
+  termsAccepted: boolean;
+  privacyPolicyAcknowledged: boolean;
 };
 
 type UpdateProfileInput = {
@@ -29,6 +32,11 @@ function getDefaultAvatarUrl(
 export async function registerUser(
   input: RegisterUserInput,
 ) {
+  const policyConsentData = createPolicyConsentData({
+    termsAccepted: input.termsAccepted,
+    privacyPolicyAcknowledged: input.privacyPolicyAcknowledged,
+  });
+
   const existingUser = await prisma.user.findFirst({
     where: {
       OR: [
@@ -80,6 +88,7 @@ export async function registerUser(
       displayName: normalizedDisplayName,
       avatarUrl,
       gender: input.gender,
+      ...policyConsentData,
     },
     select: {
       id: true,

@@ -28,7 +28,16 @@ export async function register(
       password,
       displayName,
       gender,
+      termsAccepted,
+      privacyPolicyAcknowledged,
     } = req.body;
+
+    if (termsAccepted !== true || privacyPolicyAcknowledged !== true) {
+      res.status(400).json({
+        error: "You must agree to the Terms & Conditions and acknowledge the Privacy Policy to create an account.",
+      });
+      return;
+    }
 
     if (
       typeof username !== "string" ||
@@ -113,6 +122,8 @@ export async function register(
           ? displayName
           : undefined,
       gender,
+      termsAccepted,
+      privacyPolicyAcknowledged,
     });
 
     try {

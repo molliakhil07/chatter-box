@@ -278,6 +278,8 @@ function App() {
   const [authGender, setAuthGender] =
     useState<"" | "MALE" | "FEMALE">("");
 
+  const [policyConsent, setPolicyConsent] = useState(false);
+
   const [authPassword, setAuthPassword] =
     useState("");
 
@@ -2342,6 +2344,13 @@ function App() {
         return;
       }
 
+      if (!policyConsent) {
+        setAuthFormError(
+          "Please agree to the Terms & Conditions and acknowledge the Privacy Policy to create an account.",
+        );
+        return;
+      }
+
       if (!isStrongPassword(authPassword)) {
         setAuthFormError(
           "Password must be at least 8 characters and include at least one alphabet, one number, and one special character.",
@@ -2355,11 +2364,14 @@ function App() {
         password: authPassword,
         displayName: authDisplayName.trim(),
         gender: authGender,
+        termsAccepted: true,
+        privacyPolicyAcknowledged: true,
       });
 
       setAuthMode("login");
       setAuthIdentity(authEmail.trim());
       setAuthPassword("");
+      setPolicyConsent(false);
       setVerificationEmail(registration.email);
       setAuthFormSuccess(
         `Account created. We sent a verification link to ${registration.email}. Verify your email before signing in.`,
@@ -3814,6 +3826,29 @@ function App() {
                     Minimum 8 characters with at least one alphabet, one number, and one special character.
                   </p>
                 </div>
+
+                
+<div className="policy-consent">
+  <input
+    id="policyConsent"
+    type="checkbox"
+    checked={policyConsent}
+    onChange={(event) => setPolicyConsent(event.target.checked)}
+    required
+  />
+
+  <label htmlFor="policyConsent">
+    I agree to the{" "}
+    <a href="/terms" target="_blank" rel="noopener noreferrer">
+      Terms &amp; Conditions
+    </a>{" "}
+    and acknowledge that I have read the{" "}
+    <a href="/privacy" target="_blank" rel="noopener noreferrer">
+      Privacy Policy
+    </a>.
+  </label>
+</div>
+
               </>
             ) : isForgot ? (
               <div className="auth-field">

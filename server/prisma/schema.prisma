@@ -19,6 +19,10 @@ model User {
   bio                     String?
   gender                  Gender?
   emailVerified           Boolean                  @default(false)
+  termsAcceptedAt              DateTime?
+  termsVersion                 String?
+  privacyPolicyAcknowledgedAt  DateTime?
+  privacyPolicyVersion         String?
   members                 ConversationMember[]
   EmailVerificationToken  EmailVerificationToken[]
   messages                Message[]
